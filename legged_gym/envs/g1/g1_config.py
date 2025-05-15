@@ -4,37 +4,6 @@ class G1RoughCfg( LeggedRobotCfg ):
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.8] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
-        # #    'left_hip_yaw_joint' : 0. ,   
-        # #    'left_hip_roll_joint' : 0,               
-        # #    'left_hip_pitch_joint' : -0.1,         
-        # #    'left_knee_joint' : 0.3,       
-        # #    'left_ankle_pitch_joint' : -0.2,     
-        # #    'left_ankle_roll_joint' : 0,     
-        # #    'right_hip_yaw_joint' : 0., 
-        # #    'right_hip_roll_joint' : 0, 
-        # #    'right_hip_pitch_joint' : -0.1,                                       
-        # #    'right_knee_joint' : 0.3,                                             
-        # #    'right_ankle_pitch_joint': -0.2,                              
-        # #    'right_ankle_roll_joint' : 0,       
-        # #    'torso_joint' : 0.
-        #     "left_hip_roll_joint" : 0.00,
-        #     "left_hip_pitch_joint": -0.20,
-        #     "left_hip_yaw_joint": 0.00,
-
-        #     "left_knee_joint": 0.42,
-        #     "rightt_hip_pitch_joint": -0.20,
-        #     # "left_knee_joint": 0.42,
-        #     "right_knee_joint": 0.42,
-        #     "left_ankle_pitch_joint": -0.23,
-        #     "right_ankle_pitch_joint": -0.23,
-        #     "left_shoulder_roll_joint": 0.3,
-        #     "right_shoulder_roll_joint": -0.3,
-        #     "left_wrist_roll_joint": -0.2,
-        #     "right_wrist_roll_joint": 0.2,
-        #     ".*_shoulder_pitch_joint": 0.8,
-        #     ".*_elbow_joint": -0.4,
-        #     ".*_wrist_pitch_joint": -0.4,
-        #     ".*_thumb_proximal_pitch_joint": 0.52
         'left_hip_pitch_joint': -0.20, 
         'right_hip_pitch_joint': -0.20, 
         'waist_yaw_joint': -0.0, 
@@ -165,26 +134,6 @@ class G1RoughCfg( LeggedRobotCfg ):
                     'R_thumb_intermediate_joint': 40.0, 
                     'L_thumb_distal_joint': 40.0, 
                     'R_thumb_distal_joint': 40.0
-
-
-                    #  ".*_hip_yaw_joint": 150.0,
-                    # ".*_hip_roll_joint": 150.0,
-                    # ".*_hip_pitch_joint": 200.0,
-                    # ".*_knee_joint": 200.0,
-                    # "waist_pitch_joint": 200.0,
-                    # "waist_roll_joint": 200.0,
-                    # "waist_yaw_joint": 200.0,
-                    # ".*_ankle_pitch_joint": 20.0,
-                    # ".*_ankle_roll_joint": 20.0,
-                    # ".*_shoulder_pitch_joint": 40.0,
-                    # ".*_shoulder_roll_joint": 40.0,
-                    # ".*_shoulder_yaw_joint": 40.0,
-                    # ".*_elbow_joint": 40.0,
-                    # ".*_wrist_roll_joint": 40.0,
-                    # ".*_wrist_pitch_joint": 40.0,
-                    # ".*_wrist_yaw_joint": 40.0,
-                    # "R_.*": 40.0,
-                    # "L_.*": 40.0,
                      }  # [N*m/rad]
         damping = {  
                 'left_hip_pitch_joint': 5.0, 
@@ -240,25 +189,6 @@ class G1RoughCfg( LeggedRobotCfg ):
                     'R_thumb_intermediate_joint': 10.0, 
                     'L_thumb_distal_joint':  10.0, 
                     'R_thumb_distal_joint': 10.0,
-
-                #      ".*_hip_yaw_joint": 5.0,
-                # ".*_hip_roll_joint": 5.0,
-                # ".*_hip_pitch_joint": 5.0,
-                # ".*_knee_joint": 5.0,
-                # "waist_pitch_joint": 5.0,
-                # "waist_roll_joint": 5.0,
-                # "waist_yaw_joint": 5.0,
-                # ".*_ankle_pitch_joint": 2.0,
-                # ".*_ankle_roll_joint": 2.0,
-                # ".*_shoulder_pitch_joint": 10.0,
-                # ".*_shoulder_roll_joint": 10.0,
-                # ".*_shoulder_yaw_joint": 10.0,
-                # ".*_elbow_joint": 10.0,
-                # ".*_wrist_roll_joint": 10.0,
-                # ".*_wrist_pitch_joint": 10.0,
-                # ".*_wrist_yaw_joint": 10.0,
-                # "R_.*": 10.0,
-                # "L_.*": 10.0,
                      }  # [N*m/rad]  # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         action_scale = 0.5
