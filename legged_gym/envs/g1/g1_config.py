@@ -92,8 +92,8 @@ class G1RoughCfg( LeggedRobotCfg ):
     
     class env(LeggedRobotCfg.env):
         # 3 + 3 + 3 + 3 + 53 + 53 + 53 = 171
-        num_observations = 171
-        # num_privileged_obs = 174
+        num_observations = 173
+        num_privileged_obs = None
         num_actions = 53#12
 
 
