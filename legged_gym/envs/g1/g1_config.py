@@ -36,13 +36,13 @@ class G1RoughCfg( LeggedRobotCfg ):
             'left_hip_pitch_joint': -0.2,
             'left_hip_roll_joint': 0.0,
             'left_hip_yaw_joint': 0.0,
-            'left_knee_joint': 0.0,
+            'left_knee_joint': 0.42,
             'left_ankle_pitch_joint': -0.23,
             'left_ankle_roll_joint': 0.0,
             'right_hip_pitch_joint': -0.2,
             'right_hip_roll_joint': 0.0,
             'right_hip_yaw_joint': 0.0,
-            'right_knee_joint': 0.0,
+            'right_knee_joint': 0.42,
             'right_ankle_pitch_joint': -0.23,
             'right_ankle_roll_joint': 0.0,
             'waist_yaw_joint': 0.0,
@@ -129,17 +129,9 @@ class G1RoughCfg( LeggedRobotCfg ):
                     'wrist_roll': 2,
                     'wrist_pitch': 2,
                     'wrist_yaw': 2,
-
-                    # 'shoulder_pitch': 10.0,
-                    # 'shoulder_roll': 10.0,
-                    # 'shoulder_yaw': 10.0,
-                    # 'elbow': 10.0, 
-                    # 'wrist_pitch': 10.0, 
-                    # 'wrist_roll': 10.0, 
-                    # 'wrist_yaw': 10.0, 
                      }  # [N*m/rad]  # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 0.0
+        action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
 
@@ -148,8 +140,8 @@ class G1RoughCfg( LeggedRobotCfg ):
         name = "g1"
         foot_name = "ankle_roll"
         penalize_contacts_on = ["hip", "knee"]
-        terminate_after_contacts_on = ["pelvis"]
-        self_collisions = 1 # 1 to disable, 0 to enable...bitwise filter
+        terminate_after_contacts_on = ["pelvis", "torso_link"]
+        self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         flip_visual_attachments = False
   
     class rewards( LeggedRobotCfg.rewards ):
@@ -178,8 +170,8 @@ class G1RoughCfg( LeggedRobotCfg ):
 class G1RoughCfgPPO( LeggedRobotCfgPPO ):
     class policy:
         init_noise_std = 1.0
-        actor_hidden_dims = [256, 128, 128]
-        critic_hidden_dims = [256, 128, 128]
+        actor_hidden_dims = [512, 256, 128]
+        critic_hidden_dims = [512, 256, 128]
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
         # only for 'ActorCriticRecurrent':
         # rnn_type = 'lstm'
