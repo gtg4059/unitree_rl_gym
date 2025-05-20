@@ -93,6 +93,7 @@ class G1Robot(LeggedRobot):
                                     ),dim=-1)
         # add perceptive inputs if not blind
         # add noise if needed
+        print("self.obs_buf:",self.obs_buf)
         # print("commands_scale:",self.commands_scale)
         if self.add_noise:
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
