@@ -546,6 +546,7 @@ class LeggedRobot(BaseTask):
         asset_options.disable_gravity = self.cfg.asset.disable_gravity
 
         robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
+        # print(self.gym.get_asset_joint_names(robot_asset))
         self.num_dof = self.gym.get_asset_dof_count(robot_asset)
         self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
         dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)

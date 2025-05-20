@@ -21,13 +21,14 @@ class G1Robot(LeggedRobot):
         self.add_noise = self.cfg.noise.add_noise
         noise_scales = self.cfg.noise.noise_scales
         noise_level = self.cfg.noise.noise_level
-        noise_vec[:3] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
-        noise_vec[3:6] = noise_scales.gravity * noise_level
-        noise_vec[6:9] = 0. # commands
-        noise_vec[9:9+self.num_actions] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
-        noise_vec[9+self.num_actions:9+2*self.num_actions] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
-        noise_vec[9+2*self.num_actions:9+3*self.num_actions] = 0. # previous actions
-        noise_vec[9+3*self.num_actions:9+3*self.num_actions+2] = 0. # sin/cos phase
+        noise_vec[:3] = noise_scales.lin_vel * noise_level * self.obs_scales.lin_vel
+        noise_vec[3:6] = noise_scales.ang_vel * noise_level * self.obs_scales.ang_vel
+        noise_vec[6:9] = noise_scales.gravity * noise_level
+        noise_vec[9:12] = 0. # commands
+        noise_vec[12:12+self.num_actions] = noise_scales.dof_pos * noise_level * self.obs_scales.dof_pos
+        noise_vec[12+self.num_actions:12+2*self.num_actions] = noise_scales.dof_vel * noise_level * self.obs_scales.dof_vel
+        noise_vec[12+2*self.num_actions:12+3*self.num_actions] = 0. # previous actions
+        # noise_vec[9+3*self.num_actions:9+3*self.num_actions+2] = 0. # sin/cos phase
         
         return noise_vec
 
@@ -70,7 +71,8 @@ class G1Robot(LeggedRobot):
         """
         sin_phase = torch.sin(2 * np.pi * self.phase ).unsqueeze(1)
         cos_phase = torch.cos(2 * np.pi * self.phase ).unsqueeze(1)
-        self.obs_buf = torch.cat((  self.base_ang_vel  * self.obs_scales.ang_vel,
+        self.obs_buf = torch.cat((  self.base_lin_vel * self.obs_scales.lin_vel,
+                                    self.base_ang_vel  * self.obs_scales.ang_vel,
                                     self.projected_gravity,
                                     self.commands[:, :3] * self.commands_scale,
                                     (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
@@ -91,6 +93,7 @@ class G1Robot(LeggedRobot):
                                     ),dim=-1)
         # add perceptive inputs if not blind
         # add noise if needed
+        # print("commands_scale:",self.commands_scale)
         if self.add_noise:
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
 
