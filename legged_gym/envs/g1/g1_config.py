@@ -45,22 +45,23 @@ class G1RoughCfg( LeggedRobotCfg ):
             'right_knee_joint': 0.42,
             'right_ankle_pitch_joint': -0.23,
             'right_ankle_roll_joint': 0.0,
+            # 29 dof
             'waist_yaw_joint': 0.0,
             'waist_roll_joint': 0.0,
             'waist_pitch_joint': 0.0,
-            'left_shoulder_pitch_joint': 0.8,
+            'left_shoulder_pitch_joint': 0.3,
             'left_shoulder_roll_joint': 0.3,
             'left_shoulder_yaw_joint': 0.0,
-            'left_elbow_joint': -0.4,
-            'left_wrist_roll_joint': -0.2,
-            'left_wrist_pitch_joint': -0.4,
+            'left_elbow_joint': 0.9,
+            'left_wrist_roll_joint': 0.0,
+            'left_wrist_pitch_joint': 0.0,
             'left_wrist_yaw_joint': 0.0,
-            'right_shoulder_pitch_joint': 0.8,
+            'right_shoulder_pitch_joint': 0.3,
             'right_shoulder_roll_joint': -0.3,
             'right_shoulder_yaw_joint': 0.0,
-            'right_elbow_joint': -0.4,
-            'right_wrist_roll_joint': 0.2,
-            'right_wrist_pitch_joint': -0.4,
+            'right_elbow_joint': 0.9,
+            'right_wrist_roll_joint': 0.0,
+            'right_wrist_pitch_joint': 0.0,
             'right_wrist_yaw_joint': 0.0,
         }
     
@@ -68,7 +69,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         # 3 + 3 + 3 + 3 + 29 + 29 + 29 + 2 = 171
         num_observations = 101
         num_privileged_obs = None
-        num_actions = 29#12
+        num_actions = 29
 
 
     class domain_rand(LeggedRobotCfg.domain_rand):
@@ -84,24 +85,13 @@ class G1RoughCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        # stiffness = {'hip_yaw': 100,
-        #              'hip_roll': 100,
-        #              'hip_pitch': 100,
-        #              'knee': 150,
-        #              'ankle': 40,
-        #              }  # [N*m/rad]
-        # damping = {  'hip_yaw': 2,
-        #              'hip_roll': 2,
-        #              'hip_pitch': 2,
-        #              'knee': 4,
-        #              'ankle': 2,
-        #              } 
         stiffness = {
                     'hip_yaw': 100,
                     'hip_roll': 100,
                     'hip_pitch': 100,
                     'knee': 150,
                     'ankle': 40,
+                    # 29 dof
                     'waist_yaw_joint': 100,
                     'waist_roll_joint': 100,
                     'waist_pitch_joint': 100,
@@ -119,6 +109,7 @@ class G1RoughCfg( LeggedRobotCfg ):
                     'hip_pitch': 2,
                     'knee': 4,
                     'ankle': 2,
+                    # 29 dof
                     'waist_yaw_joint': 2,
                     'waist_roll_joint': 2,
                     'waist_pitch_joint': 2,
