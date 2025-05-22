@@ -53,8 +53,10 @@ class LeggedRobot(BaseTask):
             actions (torch.Tensor): Tensor of shape (num_envs, num_actions_per_env)
         """
 
-        clip_actions_max = torch.tensor(self.cfg.normalization.clip_actions_max).to(self.device)
-        clip_actions_min = torch.tensor(self.cfg.normalization.clip_actions_min).to(self.device)
+        # clip_actions_max = torch.tensor(self.cfg.normalization.clip_actions_max).to(self.device)
+        # clip_actions_min = torch.tensor(self.cfg.normalization.clip_actions_min).to(self.device)
+        clip_actions_max = self.cfg.normalization.clip_actions_max
+        clip_actions_min = self.cfg.normalization.clip_actions_min
         self.actions = torch.clip(actions, clip_actions_min, clip_actions_max).to(self.device)
         # print(self.actions.shape)
         # step physics and render each frame
@@ -329,6 +331,7 @@ class LeggedRobot(BaseTask):
             torques = actions_scaled
         else:
             raise NameError(f"Unknown controller type: {control_type}")
+        # print(torques)
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
 
     def _reset_dofs(self, env_ids):
@@ -594,6 +597,7 @@ class LeggedRobot(BaseTask):
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
+            # print(self.gym.get_actor_index(env_handle, actor_handle, gymapi.DOMAIN_SIM))
 
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):

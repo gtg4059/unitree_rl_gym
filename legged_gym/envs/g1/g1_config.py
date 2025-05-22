@@ -20,7 +20,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         }
     
     class env(LeggedRobotCfg.env):
-        num_observations = 50
+        num_observations = 48
         num_privileged_obs = None
         num_actions = 12
 
