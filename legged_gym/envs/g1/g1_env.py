@@ -78,8 +78,8 @@ class G1Robot(LeggedRobot):
                                     (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
                                     self.dof_vel * self.obs_scales.dof_vel,
                                     self.actions,
-                                    # sin_phase,
-                                    # cos_phase
+                                    sin_phase,
+                                    cos_phase
                                     ),dim=-1)
         self.privileged_obs_buf = torch.cat((  self.base_lin_vel * self.obs_scales.lin_vel,
                                     self.base_ang_vel  * self.obs_scales.ang_vel,
@@ -88,22 +88,9 @@ class G1Robot(LeggedRobot):
                                     (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
                                     self.dof_vel * self.obs_scales.dof_vel,
                                     self.actions,
-                                    # sin_phase,
-                                    # cos_phase
+                                    sin_phase,
+                                    cos_phase
                                     ),dim=-1)
-        # add perceptive inputs if not blind
-        # add noise if needed
-        # print("self.obs_buf:",self.obs_buf)
-
-        # print("self.base_lin_vel:",self.base_lin_vel)
-        # print("self.base_ang_vel:",self.base_ang_vel)
-        # print("self.projected_gravity:",self.projected_gravity)
-        # print("self.commands[:, :3]:",self.commands[:, :3])
-        # print("self.dof_pos:",self.dof_pos - self.default_dof_pos)
-        # print("self.dof_vel:",self.dof_vel)
-        # print("self.actions:",self.actions)
-        
-        # print("commands_scale:",self.commands_scale)
         if self.add_noise:
             self.obs_buf += (2 * torch.rand_like(self.obs_buf) - 1) * self.noise_scale_vec
 

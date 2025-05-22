@@ -32,10 +32,10 @@ if __name__ == "__main__":
     # get config file name from command line
     import argparse
 
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("config_file", type=str, help="config file name in the config folder")
-    # args = parser.parse_args()
-    config_file = "g1.yaml"#args.config_file
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file", type=str, help="config file name in the config folder")
+    args = parser.parse_args()
+    config_file = args.config_file #"g1.yaml"#args.config_file
     with open(f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_mujoco/configs/{config_file}", "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
         policy_path = config["policy_path"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
