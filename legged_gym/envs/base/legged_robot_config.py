@@ -47,10 +47,10 @@ class LeggedRobotCfg(BaseConfig):
             lin_vel_y = [-1.0, 1.0]   # min max [m/s]
             ang_vel_yaw = [-1.0, 1.0]    # min max [rad/s]
             heading = [-3.14, 3.14]
-            # lin_vel_x = [0.6, 1.0] # min max [m/s]
-            # lin_vel_y = [-0.01, 0.01]   # min max [m/s]
-            # ang_vel_yaw = [0, 0]    # min max [rad/s]
-            # heading = [-0.01, 0.01]
+            # lin_vel_x = [0.5, 0.5] # min max [m/s]
+            # lin_vel_y = [0.0, 0.0]   # min max [m/s]
+            # ang_vel_yaw = [0.0, 0.0]    # min max [rad/s]
+            # heading = [-1.0, 1.0]
 
     class init_state:
         pos = [0.0, 0.0, 1.] # x,y,z [m]
@@ -136,8 +136,12 @@ class LeggedRobotCfg(BaseConfig):
             dof_vel = 0.05
             height_measurements = 5.0
         clip_observations = 100.
-        clip_actions_max = 100#[[100,1.0,100,1.2,100,100,100,0.1,100,1.2,100,100]]
-        clip_actions_min = -100#[[100,-0.1,100,0.4,100,100,100,-1.0,100,0.4,100,100]]
+
+        # ['left_hip_pitch_joint', 'left_hip_roll_joint', 'left_hip_yaw_joint', 'left_knee_joint', 
+        #  'left_ankle_pitch_joint', 'left_ankle_roll_joint', 'right_hip_pitch_joint', 'right_hip_roll_joint', 
+        #  'right_hip_yaw_joint', 'right_knee_joint', 'right_ankle_pitch_joint', 'right_ankle_roll_joint']
+        clip_actions_max = 100#[100,100,100,1.2,100,100,100,100,100,1.2,100,100]
+        clip_actions_min = -100#[-100,-100,-100,0.3,-100,-100,-100,-100,-100,0.3,-100,-100]
 
     class noise:
         add_noise = True

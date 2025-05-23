@@ -35,7 +35,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("config_file", type=str, help="config file name in the config folder")
     args = parser.parse_args()
-    config_file = args.config_file #"g1.yaml"#args.config_file
+    config_file = args.config_file # "g1.yaml"
     with open(f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_mujoco/configs/{config_file}", "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
         policy_path = config["policy_path"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
@@ -50,7 +50,6 @@ if __name__ == "__main__":
 
         default_angles = np.array(config["default_angles"], dtype=np.float32)
 
-        lin_vel_scale = config["ang_vel_scale"]
         ang_vel_scale = config["ang_vel_scale"]
         dof_pos_scale = config["dof_pos_scale"]
         dof_vel_scale = config["dof_vel_scale"]
@@ -76,6 +75,8 @@ if __name__ == "__main__":
 
     # load policy
     policy = torch.jit.load(policy_path)
+    max_vals = np.array([[100,100,100,1.2,100,100,100,100,100,1.2,100,100]])
+    min_vals = np.array([[-100,-100,-100,0.3,-100,-100,-100,-100,-100,0.3,-100,-100]])
 
     with mujoco.viewer.launch_passive(m, d) as viewer:
         # Close the viewer automatically after simulation_duration wall-seconds.
@@ -93,17 +94,12 @@ if __name__ == "__main__":
                 # Apply control signal here.
 
                 # create observation
-                lin_vel = d.qvel[0:3]
                 qj = d.qpos[7:]
                 dqj = d.qvel[6:]
                 quat = d.qpos[3:7]
                 omega = d.qvel[3:6]
 
-                qj = (qj - default_angles) * dof_pos_scale
-                dqj = dqj * dof_vel_scale
                 gravity_orientation = get_gravity_orientation(quat)
-                lin_vel = lin_vel * lin_vel_scale
-                omega = omega * ang_vel_scale
 
                 period = 0.8
                 count = counter * simulation_dt
@@ -111,19 +107,20 @@ if __name__ == "__main__":
                 sin_phase = np.sin(2 * np.pi * phase)
                 cos_phase = np.cos(2 * np.pi * phase)
 
-                obs[:3] = lin_vel
-                obs[3:6] = omega
-                obs[6:9] = gravity_orientation
-                obs[9:12] = cmd * cmd_scale
-                obs[12 : 12 + num_actions] = qj
-                obs[12 + num_actions : 12 + 2 * num_actions] = dqj
-                obs[12 + 2 * num_actions : 12 + 3 * num_actions] = action
-                obs[12 + 3 * num_actions : 12 + 3 * num_actions + 2] = np.array([sin_phase, cos_phase])
+                obs[:3] = omega * ang_vel_scale
+                obs[3:6] = gravity_orientation
+                obs[6:9] = cmd * cmd_scale
+                obs[9 : 9 + num_actions] = (qj - default_angles) * dof_pos_scale
+                obs[9 + num_actions : 9 + 2 * num_actions] = dqj * dof_vel_scale
+                obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
+                obs[9 + 3 * num_actions : 9 + 3 * num_actions + 2] = np.array([sin_phase, cos_phase])
                 obs_tensor = torch.from_numpy(obs).unsqueeze(0)
                 # policy inference
                 action = policy(obs_tensor).detach().numpy().squeeze()
                 # transform action to target_dof_pos
                 target_dof_pos = action * action_scale + default_angles
+                # target_dof_pos = np.clip(action * action_scale + default_angles, min_vals, max_vals)
+                # print(target_dof_pos)
 
             # Pick up changes to the physics state, apply perturbations, update options from GUI.
             viewer.sync()
