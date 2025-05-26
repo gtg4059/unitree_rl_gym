@@ -4,72 +4,46 @@ class G1RoughCfg( LeggedRobotCfg ):
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.8] # x,y,z [m]
         default_joint_angles = { # = target angles [rad] when action = 0.0
-            # 'left_hip_pitch_joint': -0.20,
-            # 'right_hip_pitch_joint': -0.20,
-            # 'waist_yaw_joint': 0.0,
-            # 'left_hip_roll_joint': 0.0,
-            # 'right_hip_roll_joint': 0.0,
-            # 'waist_roll_joint': 0.0,
-            # 'left_hip_yaw_joint': 0.0,
-            # 'right_hip_yaw_joint': 0.0,
-            # 'waist_pitch_joint':  0.0,
-            # 'left_knee_joint':  0.42,
-            # 'right_knee_joint': 0.42,
-            # 'left_shoulder_pitch_joint': 0.8,
-            # 'right_shoulder_pitch_joint': 0.8,
-            # 'left_ankle_pitch_joint': -0.23,
-            # 'right_ankle_pitch_joint': -0.23,
-            # 'left_shoulder_roll_joint': 0.3,
-            # 'right_shoulder_roll_joint': -0.3,
-            # 'left_ankle_roll_joint': 0.0,
-            # 'right_ankle_roll_joint': 0.0,
-            # 'left_shoulder_yaw_joint': 0.0,
-            # 'right_shoulder_yaw_joint': 0.0,
-            # 'left_elbow_joint': -0.4,
-            # 'right_elbow_joint': -0.4,
-            # 'left_wrist_roll_joint': -0.2,
-            # 'right_wrist_roll_joint': 0.2,
-            # 'left_wrist_pitch_joint':  -0.4,
-            # 'right_wrist_pitch_joint': -0.4,
-            # 'left_wrist_yaw_joint': 0.0,
-            # 'right_wrist_yaw_joint': 0.0,
-            'left_hip_pitch_joint': -0.2,
+            'left_hip_pitch_joint': -0.1,
             'left_hip_roll_joint': 0.0,
             'left_hip_yaw_joint': 0.0,
-            'left_knee_joint': 0.42,
-            'left_ankle_pitch_joint': -0.23,
+            'left_knee_joint': 0.3,
+            'left_ankle_pitch_joint': -0.2,
             'left_ankle_roll_joint': 0.0,
-            'right_hip_pitch_joint': -0.2,
+            'right_hip_pitch_joint': -0.1,
             'right_hip_roll_joint': 0.0,
             'right_hip_yaw_joint': 0.0,
-            'right_knee_joint': 0.42,
-            'right_ankle_pitch_joint': -0.23,
-            'right_ankle_roll_joint': 0.0,
-            # 29 dof
-            'waist_yaw_joint': 0.0,
-            'waist_roll_joint': 0.0,
-            'waist_pitch_joint': 0.0,
-            'left_shoulder_pitch_joint': 0.3,
+            'right_knee_joint': 0.3,
+            'right_ankle_pitch_joint': -0.2,
+            'right_ankle_roll_joint': 0.0,  
+            # 29
+            "waist_pitch_joint":0.0,
+            "waist_roll_joint":0.0,
+            "waist_yaw_joint":0.0,
+            'left_shoulder_pitch_joint': 0.4,
             'left_shoulder_roll_joint': 0.3,
             'left_shoulder_yaw_joint': 0.0,
-            'left_elbow_joint': 0.9,
+            'left_elbow_joint': -0.4,
             'left_wrist_roll_joint': 0.0,
             'left_wrist_pitch_joint': 0.0,
             'left_wrist_yaw_joint': 0.0,
-            'right_shoulder_pitch_joint': 0.3,
+            'right_shoulder_pitch_joint': 0.4,
             'right_shoulder_roll_joint': -0.3,
             'right_shoulder_yaw_joint': 0.0,
-            'right_elbow_joint': 0.9,
+            'right_elbow_joint': -0.4,
             'right_wrist_roll_joint': 0.0,
             'right_wrist_pitch_joint': 0.0,
             'right_wrist_yaw_joint': 0.0,
         }
     
     class env(LeggedRobotCfg.env):
-        # 3 + 3 + 3 + 3 + 29 + 29 + 29 + 2 = 171
-        num_observations = 101
-        num_privileged_obs = None
+        # 3 + 3 + 3 + 29 + 29 + 29 + 2 = 171
+        num_observations = 98
+        num_privileged_obs = 101
         num_actions = 29
+        # num_observations = 47
+        # num_privileged_obs = 50
+        # num_actions = 12
 
 
     class domain_rand(LeggedRobotCfg.domain_rand):
@@ -92,9 +66,9 @@ class G1RoughCfg( LeggedRobotCfg ):
                     'knee': 150,
                     'ankle': 40,
                     # 29 dof
-                    'waist_yaw_joint': 100,
-                    'waist_roll_joint': 100,
-                    'waist_pitch_joint': 100,
+                    'waist_yaw': 100,
+                    'waist_roll': 100,
+                    'waist_pitch': 100,
                     'shoulder_pitch': 50,
                     'shoulder_roll': 50,
                     'shoulder_yaw': 50,
@@ -110,9 +84,9 @@ class G1RoughCfg( LeggedRobotCfg ):
                     'knee': 4,
                     'ankle': 2,
                     # 29 dof
-                    'waist_yaw_joint': 2,
-                    'waist_roll_joint': 2,
-                    'waist_pitch_joint': 2,
+                    'waist_yaw': 2,
+                    'waist_roll': 2,
+                    'waist_pitch': 2,
                     'shoulder_pitch': 2,
                     'shoulder_roll': 2,
                     'shoulder_yaw': 2,
@@ -127,6 +101,7 @@ class G1RoughCfg( LeggedRobotCfg ):
         decimation = 4
 
     class asset( LeggedRobotCfg.asset ):
+        # file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/g1_description/g1_12dof.urdf'
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/g1_description/g1_29dof_rev_1_0.urdf'
         name = "g1"
         foot_name = "ankle_roll"
