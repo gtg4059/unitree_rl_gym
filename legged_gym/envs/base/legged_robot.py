@@ -591,7 +591,7 @@ class LeggedRobot(BaseTask):
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
-            print(self.gym.get_actor_dof_names(env_handle, actor_handle))
+            # print(self.gym.get_actor_dof_names(env_handle, actor_handle))
 
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
