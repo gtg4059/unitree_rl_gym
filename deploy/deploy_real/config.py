@@ -25,11 +25,15 @@ class Config:
             self.leg_joint2motor_idx = config["leg_joint2motor_idx"]
             self.kps = config["kps"]
             self.kds = config["kds"]
+            self.limits_low = config["limits_low"]
+            self.limits_high = config["limits_high"]
             self.default_angles = np.array(config["default_angles"], dtype=np.float32)
 
             self.arm_waist_joint2motor_idx = config["arm_waist_joint2motor_idx"]
             self.arm_waist_kps = config["arm_waist_kps"]
             self.arm_waist_kds = config["arm_waist_kds"]
+            self.arm_waist_limits_low = config["arm_waist_limits_low"]
+            self.arm_waist_limits_high = config["arm_waist_limits_high"]
             self.arm_waist_target = np.array(config["arm_waist_target"], dtype=np.float32)
 
             self.ang_vel_scale = config["ang_vel_scale"]
