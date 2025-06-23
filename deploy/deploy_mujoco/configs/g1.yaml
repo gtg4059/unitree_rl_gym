@@ -1,5 +1,6 @@
 # 
-policy_path: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy.pt"
+policy_path1: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy_run.pt"
+policy_path2: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy_stop.pt"
 xml_path: "{LEGGED_GYM_ROOT_DIR}/resources/robots/g1_description/scene.xml"
 
 # Total simulation time

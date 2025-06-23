@@ -26,7 +26,8 @@ class Controller:
         self.remote_controller = RemoteController()
 
         # Initialize the policy network
-        self.policy = torch.jit.load(config.policy_path)
+        self.policy_run = torch.jit.load(config.policy_path1)
+        self.policy_stop = torch.jit.load(config.policy_path2)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -197,7 +198,11 @@ class Controller:
 
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
-        self.action = self.policy(obs_tensor).detach().numpy().squeeze()
+
+        if torch.norm(self.cmd)>0.1:
+            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        else:
+            self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
         target_dof_pos = np.concatenate([self.config.default_angles, np.zeros_like(self.config.arm_default_angles)], axis=0) + self.action * self.config.action_scale #29
