@@ -18,7 +18,9 @@ from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
 from common.remote_controller import RemoteController, KeyMap
 from config import Config
-from robot_control.robot_hand_unitree import Dex3_1_Controller, Gripper_Controller
+from multiprocessing import Process, shared_memory, Array
+from multiprocessing import shared_memory, Array, Lock
+from robot_control.robot_hand_inspire import Inspire_Controller
 
 
 class Controller:
@@ -133,6 +135,12 @@ class Controller:
     def default_pos_state(self):
         print("Enter default pos state.")
         print("Waiting for the Button A signal...")
+        left_hand_array = Array('d', 6, lock = True)          # [input]
+        right_hand_array = Array('d', 6, lock = True)         # [input]
+        dual_hand_data_lock = Lock()
+        dual_hand_state_array = Array('d', 12, lock = False)   # [output] current left, right hand state(12) data.
+        dual_hand_action_array = Array('d', 12, lock = False)  # [output] current left, right hand action(12) data.
+        hand_ctrl = Inspire_Controller(left_hand_array, right_hand_array, dual_hand_data_lock, dual_hand_state_array, dual_hand_action_array)
         while self.remote_controller.button[KeyMap.A] != 1:
             for i in range(len(self.config.leg_joint2motor_idx)):
                 motor_idx = self.config.leg_joint2motor_idx[i]
