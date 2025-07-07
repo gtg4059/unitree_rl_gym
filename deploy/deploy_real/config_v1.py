@@ -20,17 +20,22 @@ class Config:
             self.lowcmd_topic = config["lowcmd_topic"]
             self.lowstate_topic = config["lowstate_topic"]
 
-            self.policy_path = config["policy_path"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
+            self.policy_path1 = config["policy_path1"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
+            self.policy_path2 = config["policy_path2"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
 
             self.leg_joint2motor_idx = config["leg_joint2motor_idx"]
             self.kps = config["kps"]
             self.kds = config["kds"]
+            self.limits_low = config["limits_low"]
+            self.limits_high = config["limits_high"]
             self.default_angles = np.array(config["default_angles"], dtype=np.float32)
 
             self.arm_waist_joint2motor_idx = config["arm_waist_joint2motor_idx"]
             self.arm_waist_kps = config["arm_waist_kps"]
             self.arm_waist_kds = config["arm_waist_kds"]
-            self.arm_waist_target = np.array(config["arm_waist_target"], dtype=np.float32)
+            self.arm_waist_limits_low = config["arm_waist_limits_low"]
+            self.arm_waist_limits_high = config["arm_waist_limits_high"]
+            self.arm_default_angles = np.array(config["arm_default_angles"], dtype=np.float32)
 
             self.ang_vel_scale = config["ang_vel_scale"]
             self.dof_pos_scale = config["dof_pos_scale"]

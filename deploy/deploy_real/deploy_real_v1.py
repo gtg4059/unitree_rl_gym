@@ -17,8 +17,7 @@ from unitree_sdk2py.utils.crc import CRC
 from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_hg, init_cmd_go, MotorMode
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
 from common.remote_controller import RemoteController, KeyMap
-from config import Config
-from robot_control.robot_hand_unitree import Dex3_1_Controller, Gripper_Controller
+from config_v1 import Config
 
 
 class Controller:
@@ -27,7 +26,8 @@ class Controller:
         self.remote_controller = RemoteController()
 
         # Initialize the policy network
-        self.policy = torch.jit.load(config.policy_path)
+        self.policy_run = torch.jit.load(config.policy_path1)
+        self.policy_stop = torch.jit.load(config.policy_path2)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -108,7 +108,7 @@ class Controller:
         dof_idx = self.config.leg_joint2motor_idx + self.config.arm_waist_joint2motor_idx
         kps = self.config.kps + self.config.arm_waist_kps
         kds = self.config.kds + self.config.arm_waist_kds
-        default_pos = np.concatenate((self.config.default_angles, self.config.arm_waist_target), axis=0)
+        default_pos = np.concatenate((self.config.default_angles, self.config.arm_default_angles), axis=0)
         dof_size = len(dof_idx)
         
         # record the current pos
@@ -143,7 +143,7 @@ class Controller:
                 self.low_cmd.motor_cmd[motor_idx].tau = 0
             for i in range(len(self.config.arm_waist_joint2motor_idx)):
                 motor_idx = self.config.arm_waist_joint2motor_idx[i]
-                self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_waist_target[i]
+                self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i]
                 self.low_cmd.motor_cmd[motor_idx].qd = 0
                 self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
                 self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
@@ -173,7 +173,7 @@ class Controller:
         gravity_orientation = get_gravity_orientation(quat)
         qj_obs = self.qj.copy()
         dqj_obs = self.dqj.copy()
-        qj_obs = (qj_obs - self.config.default_angles) * self.config.dof_pos_scale
+        qj_obs = (qj_obs - np.concatenate([self.config.default_angles, self.config.arm_default_angles])) * self.config.dof_pos_scale
         dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
         period = 0.8
@@ -198,15 +198,19 @@ class Controller:
 
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
-        self.action = self.policy(obs_tensor).detach().numpy().squeeze()
+
+        if torch.norm(self.cmd)>0.1:
+            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        else:
+            self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
-        target_dof_pos = self.config.default_angles + self.action * self.config.action_scale
+        target_dof_pos = np.concatenate([self.config.default_angles, np.zeros_like(self.config.arm_default_angles)], axis=0) + self.action * self.config.action_scale #29
 
         # Build low cmd
         for i in range(len(self.config.leg_joint2motor_idx)):
             motor_idx = self.config.leg_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = target_dof_pos[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
             self.low_cmd.motor_cmd[motor_idx].qd = 0
             self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
@@ -214,7 +218,8 @@ class Controller:
 
         for i in range(len(self.config.arm_waist_joint2motor_idx)):
             motor_idx = self.config.arm_waist_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_waist_target[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+12],self.config.arm_waist_limits_low[i],
+                                                          self.config.arm_waist_limits_high[i])
             self.low_cmd.motor_cmd[motor_idx].qd = 0
             self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
