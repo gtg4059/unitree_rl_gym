@@ -208,7 +208,7 @@ class Controller:
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
 
-        if torch.norm(self.cmd)>0.1:
+        if torch.norm(self.cmd)>0.02:
             self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         else:
             self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
