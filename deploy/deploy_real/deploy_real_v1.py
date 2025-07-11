@@ -18,9 +18,9 @@ from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
 from common.remote_controller import RemoteController, KeyMap
 from config_v1 import Config
-from multiprocessing import Process, shared_memory, Array
-from multiprocessing import shared_memory, Array, Lock
-from robot_control.robot_hand_inspire import Inspire_Controller
+# from multiprocessing import Process, shared_memory, Array
+# from multiprocessing import shared_memory, Array, Lock
+# from robot_control.robot_hand_inspire import Inspire_Controller
 
 
 class Controller:
@@ -136,12 +136,12 @@ class Controller:
     def default_pos_state(self):
         print("Enter default pos state.")
         print("Waiting for the Button A signal...")
-        left_hand_array = Array('d', 6, lock = True)          # [input]
-        right_hand_array = Array('d', 6, lock = True)         # [input]
-        dual_hand_data_lock = Lock()
-        dual_hand_state_array = Array('d', 12, lock = False)   # [output] current left, right hand state(12) data.
-        dual_hand_action_array = Array('d', 12, lock = False)  # [output] current left, right hand action(12) data.
-        hand_ctrl = Inspire_Controller(left_hand_array, right_hand_array, dual_hand_data_lock, dual_hand_state_array, dual_hand_action_array)
+        # left_hand_array = Array('d', 6, lock = True)          # [input]
+        # right_hand_array = Array('d', 6, lock = True)         # [input]
+        # dual_hand_data_lock = Lock()
+        # dual_hand_state_array = Array('d', 12, lock = False)   # [output] current left, right hand state(12) data.
+        # dual_hand_action_array = Array('d', 12, lock = False)  # [output] current left, right hand action(12) data.
+        # hand_ctrl = Inspire_Controller(left_hand_array, right_hand_array, dual_hand_data_lock, dual_hand_state_array, dual_hand_action_array)
         while self.remote_controller.button[KeyMap.A] != 1:
             for i in range(len(self.config.leg_joint2motor_idx)):
                 motor_idx = self.config.leg_joint2motor_idx[i]
@@ -198,17 +198,16 @@ class Controller:
         num_actions = self.config.num_actions
         self.obs[:3] = ang_vel
         self.obs[3:6] = gravity_orientation
-        self.obs[6:9] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-        self.obs[9 : 9 + num_actions] = qj_obs
-        self.obs[9 + num_actions : 9 + num_actions * 2] = dqj_obs
-        self.obs[9 + num_actions * 2 : 9 + num_actions * 3] = self.action
-        self.obs[9 + num_actions * 3] = sin_phase
-        self.obs[9 + num_actions * 3 + 1] = cos_phase
+        # self.obs[6:9] = self.cmd * self.config.cmd_scale * self.config.max_cmd
+        self.obs[6 : 6 + num_actions] = qj_obs
+        self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
+        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
+        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
 
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
 
-        if torch.norm(self.cmd)>0.02:
+        if np.linalg.norm(self.cmd)>0.02:
             self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         else:
             self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
@@ -216,23 +215,23 @@ class Controller:
         # transform action to target_dof_pos
         target_dof_pos = np.concatenate([self.config.default_angles, np.zeros_like(self.config.arm_default_angles)], axis=0) + self.action * self.config.action_scale #29
 
-        # Build low cmd
-        for i in range(len(self.config.leg_joint2motor_idx)):
-            motor_idx = self.config.leg_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-            self.low_cmd.motor_cmd[motor_idx].qd = 0
-            self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-            self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # # Build low cmd
+        # for i in range(len(self.config.leg_joint2motor_idx)):
+        #     motor_idx = self.config.leg_joint2motor_idx[i]
+        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        for i in range(len(self.config.arm_waist_joint2motor_idx)):
-            motor_idx = self.config.arm_waist_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+12],self.config.arm_waist_limits_low[i],
-                                                          self.config.arm_waist_limits_high[i])
-            self.low_cmd.motor_cmd[motor_idx].qd = 0
-            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
+        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
+        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+12],self.config.arm_waist_limits_low[i],
+        #                                                   self.config.arm_waist_limits_high[i])
+        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
         # send the command
         self.send_cmd(self.low_cmd)

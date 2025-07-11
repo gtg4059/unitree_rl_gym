@@ -38,7 +38,8 @@ if __name__ == "__main__":
     config_file = "g1.yaml"#args.config_file
     with open(f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_mujoco/configs/{config_file}", "r") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
-        policy_path = config["policy_path"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
+        policy_path1 = config["policy_path1"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
+        policy_path2 = config["policy_path2"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
         xml_path = config["xml_path"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
 
         simulation_duration = config["simulation_duration"]
@@ -74,7 +75,8 @@ if __name__ == "__main__":
     m.opt.timestep = simulation_dt
 
     # load policy
-    policy = torch.jit.load(policy_path)
+    policy_run = torch.jit.load(policy_path1)
+    policy_stop = torch.jit.load(policy_path2)
 
     with mujoco.viewer.launch_passive(m, d) as viewer:
         # Close the viewer automatically after simulation_duration wall-seconds.
@@ -110,14 +112,16 @@ if __name__ == "__main__":
 
                 obs[:3] = omega
                 obs[3:6] = gravity_orientation
-                obs[6:9] = cmd * cmd_scale
-                obs[9 : 9 + num_actions] = qj
-                obs[9 + num_actions : 9 + 2 * num_actions] = dqj
-                obs[9 + 2 * num_actions : 9 + 3 * num_actions] = action
-                obs[9 + 3 * num_actions : 9 + 3 * num_actions + 2] = np.array([sin_phase, cos_phase])
+                obs[6 : 6 + num_actions] = qj
+                obs[6 + num_actions : 6 + 2 * num_actions] = dqj
+                obs[6 + 2 * num_actions : 6 + 3 * num_actions] = action
+                obs[6 + 3 * num_actions:9 + 3 * num_actions] = cmd * cmd_scale
                 obs_tensor = torch.from_numpy(obs).unsqueeze(0)
                 # policy inference
-                action = policy(obs_tensor).detach().numpy().squeeze()
+                if np.linalg.norm(cmd)>0.02:
+                    action = policy_run(obs_tensor).detach().numpy().squeeze()
+                else:
+                    action = policy_stop(obs_tensor).detach().numpy().squeeze()
                 # transform action to target_dof_pos
                 target_dof_pos = action * action_scale + default_angles
 
