@@ -116,6 +116,7 @@ if __name__ == "__main__":
                 obs[6 + num_actions : 6 + 2 * num_actions] = dqj
                 obs[6 + 2 * num_actions : 6 + 3 * num_actions] = action
                 obs[6 + 3 * num_actions:9 + 3 * num_actions] = cmd * cmd_scale
+                # print(*obs)
                 obs_tensor = torch.from_numpy(obs).unsqueeze(0)
                 # policy inference
                 if np.linalg.norm(cmd)>0.02:
@@ -124,7 +125,6 @@ if __name__ == "__main__":
                     action = policy_stop(obs_tensor).detach().numpy().squeeze()
                 # transform action to target_dof_pos
                 target_dof_pos = action * action_scale + default_angles
-
             # Pick up changes to the physics state, apply perturbations, update options from GUI.
             viewer.sync()
 

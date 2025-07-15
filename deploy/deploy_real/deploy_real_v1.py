@@ -234,6 +234,15 @@ class Controller:
             # self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             # self.low_cmd.motor_cmd[motor_idx].tau = 0
 
+        if np.any(np.abs(self.dqj) > 5):
+            print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
+            print(f"Terminating robot control for safety.")
+            # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
+            create_damping_cmd(self.low_cmd)
+            self.send_cmd(self.low_cmd)
+            time.sleep(0.1) # 명령 전송 후 잠시 대기
+            raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
+
         # send the command
         # self.send_cmd(self.low_cmd)
 
