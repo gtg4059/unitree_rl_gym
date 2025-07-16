@@ -200,7 +200,7 @@ class Controller:
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-
+        # print("self.obs:",*self.obs)
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
 
@@ -211,30 +211,30 @@ class Controller:
         
         # transform action to target_dof_pos
         target_dof_pos = np.concatenate([self.config.default_angles, self.config.arm_default_angles], axis=0) + self.action * self.config.action_scale #29
-        print("target_dof_pos:",target_dof_pos)
+        # print("target_dof_pos:",*target_dof_pos)
 
         # Build low cmd
-        print("leg_joint2motor_idx")
+        # print("leg_joint2motor_idx")
         for i in range(len(self.config.leg_joint2motor_idx)):
-            print(target_dof_pos[i])
-            # motor_idx = self.config.leg_joint2motor_idx[i]
-            # self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-            # self.low_cmd.motor_cmd[motor_idx].qd = 0
-            # self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-            # self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-            # self.low_cmd.motor_cmd[motor_idx].tau = 0
-        print("arm_waist_joint2motor_idx")
+            # print(target_dof_pos[i],sep=',',end='')
+            motor_idx = self.config.leg_joint2motor_idx[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # print("arm_waist_joint2motor_idx")
         for i in range(len(self.config.arm_waist_joint2motor_idx)):
-            print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)])
-            # motor_idx = self.config.arm_waist_joint2motor_idx[i]
-            # self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-            #                                               self.config.arm_waist_limits_high[i])
-            # self.low_cmd.motor_cmd[motor_idx].qd = 0
-            # self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-            # self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-            # self.low_cmd.motor_cmd[motor_idx].tau = 0
+            # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+            motor_idx = self.config.arm_waist_joint2motor_idx[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
+                                                          self.config.arm_waist_limits_high[i])
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        if np.any(np.abs(self.dqj) > 5):
+        if np.any(np.abs(self.dqj) > 20):
             print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
             print(f"Terminating robot control for safety.")
             # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
@@ -244,7 +244,7 @@ class Controller:
             raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
 
         # send the command
-        # self.send_cmd(self.low_cmd)
+        self.send_cmd(self.low_cmd)
 
         time.sleep(self.config.control_dt)
 
