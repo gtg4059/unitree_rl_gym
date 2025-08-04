@@ -784,9 +784,16 @@ class Controller:
     def default_pos_state(self):
         print("Enter default pos state.")
         print("Waiting for the Button A signal...")
+        # # force test
+        # self.mode = 0b0100
+        # self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
+        # self.right_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
+        
+        # pos
         self.mode = 0b0001
         self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
         self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+
         self.hand_ctrl = Inspire_Controller(self.mode, self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
         while self.remote_controller.button[KeyMap.A] != 1:
             for i in range(len(self.config.leg_joint2motor_idx)):
@@ -851,10 +858,20 @@ class Controller:
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
 
         if np.linalg.norm(self.cmd)<=0.02 and controller.remote_controller.button[KeyMap.X] == 1:
+            self.mode = 0b0100
+            self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
+            self.right_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
+            self.hand_ctrl = Inspire_Controller(self.mode, self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
             self.action = self.policy_pickup(obs_tensor).detach().numpy().squeeze()
         elif np.linalg.norm(self.cmd)>0.02:
+            self.mode = 0b0001
+            self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+            self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
             self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         else:
+            self.mode = 0b0001
+            self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+            self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
             self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
