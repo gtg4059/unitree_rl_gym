@@ -7,8 +7,9 @@ imu_type: "pelvis"    # "torso" or "pelvis"
 lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
 
-policy_path1: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy_run.pt"
-policy_path2: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy_stop.pt"
+policy_run: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy_run.pt"
+policy_stop: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy_stop.pt"
+policy_pickup: "{LEGGED_GYM_ROOT_DIR}/logs/g1/exported/policies/policy_pickup.pt"
 
 leg_joint2motor_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 kps: [100, 100, 100, 150, 40, 40, 100, 100, 100, 150, 40, 40]
