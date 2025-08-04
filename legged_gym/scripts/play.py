@@ -40,6 +40,7 @@ def play(args):
         print('Exported policy as jit script to: ', path)
 
     for i in range(10*int(env.max_episode_length)):
+        # print("obs.shape:",obs.shape)
         actions = policy(obs.detach())
         obs, _, rews, dones, infos = env.step(actions.detach())
 

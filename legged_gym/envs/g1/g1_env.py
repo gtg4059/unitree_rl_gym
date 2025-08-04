@@ -70,7 +70,8 @@ class G1Robot(LeggedRobot):
         """
         sin_phase = torch.sin(2 * np.pi * self.phase ).unsqueeze(1)
         cos_phase = torch.cos(2 * np.pi * self.phase ).unsqueeze(1)
-        self.obs_buf = torch.cat((  self.base_ang_vel  * self.obs_scales.ang_vel,
+        self.obs_buf = torch.cat((  
+                                    self.base_ang_vel  * self.obs_scales.ang_vel,
                                     self.projected_gravity,
                                     self.commands[:, :3] * self.commands_scale,
                                     (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
