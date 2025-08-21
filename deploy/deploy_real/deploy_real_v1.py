@@ -3,6 +3,9 @@ from typing import Union
 import numpy as np
 import time
 import torch
+import os
+import pandas as pd
+import datetime
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
@@ -27,10 +30,10 @@ class Controller:
     def __init__(self, config: Config) -> None:
         self.config = config
         self.remote_controller = RemoteController()
-
+        self.robot_data = []
         # Initialize the policy network
-        self.policy_run = torch.jit.load(config.policy_path1)
-        self.policy_stop = torch.jit.load(config.policy_path2)
+        self.policy_run = torch.jit.load(config.policy_run)
+        self.policy_stop = torch.jit.load(config.policy_stop)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -39,6 +42,7 @@ class Controller:
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
         self.cmd = np.array([0.0, 0, 0])
         self.counter = 0
+        self.start_time = None
 
         if config.msg_type == "hg":
             # g1 and h1_2 use the hg msg type
@@ -76,6 +80,37 @@ class Controller:
         elif config.msg_type == "go":
             init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)
 
+    def save_data_to_csv(self, filename=None):
+        """
+        수집된 로봇 데이터를 CSV 파일로 저장
+        """
+        if not self.robot_data:
+            print("No data to save.")
+            return
+        
+        if filename is None:
+            # 현재 시간을 포함한 파일명 생성
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"robot_data_{timestamp}.csv"
+        
+        # DataFrame 생성
+        df = pd.DataFrame(self.robot_data)
+        # CSV 파일로 저장
+        df.to_csv(filename, index=False)
+        
+        # action 통계 (처음 5개 관절)
+        print("Action (first 5 joints):")
+        for j in range(min(5, 23)):
+            col = f'action_{j}'
+            if col in df.columns:
+                mean_val = df[col].mean()
+                std_val = df[col].std()
+                min_val = df[col].min()
+                max_val = df[col].max()
+                print(f"  joint_{j}: mean={mean_val:.6f}, std={std_val:.6f}, range=[{min_val:.6f}, {max_val:.6f}]")
+        
+        return filename
+    
     def LowStateHgHandler(self, msg: LowStateHG):
         self.low_state = msg
         self.mode_machine_ = self.low_state.mode_machine
@@ -236,6 +271,16 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
 
+            # 데이터 수집 (매 스텝마다)
+            data_row = {}
+            
+            # 액션과 목표 위치 추가
+            for i in range(len(self.action)):
+                data_row[f'action_{i}'] = float(self.action[i])
+                data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
+            
+            self.robot_data.append(data_row)
+
         if np.any(np.abs(self.dqj) > 20):
             print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
             print(f"Terminating robot control for safety.")
@@ -249,6 +294,7 @@ class Controller:
         self.send_cmd(self.low_cmd)
 
         time.sleep(self.config.control_dt)
+
 
 
 if __name__ == "__main__":
@@ -288,4 +334,9 @@ if __name__ == "__main__":
     # Enter the damping state
     create_damping_cmd(controller.low_cmd)
     controller.send_cmd(controller.low_cmd)
+
+    print("Saving robot data...")
+    csv_filename = controller.save_data_to_csv()
+    print(f"Data saved to: {csv_filename}")
+
     print("Exit")
