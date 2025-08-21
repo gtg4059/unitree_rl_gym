@@ -33,7 +33,7 @@ import threading
 # Configuration
 PORT_IMAGE = 5555
 PORT_SYNC = 6666
-YOLO_MODEL_PATH = f"{LEGGED_GYM_ROOT_DIR}/logs/YOLO/0528_jh_yolov8m_l.pt" #"yolov8_depth/pt/0528_jh_yolov8m_l.pt"
+YOLO_MODEL_PATH = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/YOLO/0528_jh_yolov8m_l.pt" #"yolov8_depth/pt/0528_jh_yolov8m_l.pt"
 CLASSES = YAML.load(check_yaml('coco128.yaml'))['names']
 colors = np.random.uniform(0, 255, size=(len(CLASSES), 3))
 detector = cv2.QRCodeDetector()
