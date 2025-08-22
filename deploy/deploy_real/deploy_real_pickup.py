@@ -870,7 +870,7 @@ class Controller:
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
 
-        print("boxdata:",self.boxdata[0],self.boxdata[1],self.boxdata[2])
+        print("boxdata:",self.boxdata[:])
         
         # if np.linalg.norm(self.cmd)<=0.02 and controller.remote_controller.button[KeyMap.X] == 1:
         #     self.mode = 0b0100
@@ -958,6 +958,7 @@ if __name__ == "__main__":
     while True:
         try:
             controller.run()
+            print('runrun')
             # Press the select key to exit
             if controller.remote_controller.button[KeyMap.select] == 1:
                 break
