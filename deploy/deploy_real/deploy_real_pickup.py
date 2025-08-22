@@ -20,15 +20,15 @@ from common.remote_controller import RemoteController, KeyMap
 from config_v1 import Config
 from multiprocessing import Array, Lock, Value
 from robot_control.robot_hand_inspire import Inspire_Controller
+from robot_control.YoloClientProcess import YoloClientProcess
 
 import zmq
 import struct
 import cv2
-from pyzbar.pyzbar import decode
 from ultralytics import YOLO
 from ultralytics.utils.checks import check_yaml
 from ultralytics.utils import ROOT, YAML
-import threading
+from threading import Thread
 
 # Configuration
 PORT_IMAGE = 5555
@@ -241,17 +241,24 @@ def run_client(server_ip="127.0.0.1"):
     # Send to server and wait for reply
     req_socket.send(packed_msg)
     ack = req_socket.recv()
-    print(f"[Client] Sent YOLO info, got: {ack.decode()}")
+    #print(f"[Client] Sent YOLO info, got: {ack.decode()}")
 
     while True:
         try:
             # Receive image
             message = sub_socket.recv()
-            header_size = struct.calcsize('ii9f')
+            header_size = struct.calcsize('iii9f')
             header = message[:header_size]
-            color_len, depth_len, *depth_intrinsics = struct.unpack('ii9f', header)
+            lidar_len, color_len, depth_len, *depth_intrinsics = struct.unpack('iii9f', header)
             jpg_bytes = message[header_size:header_size + color_len]
             png_bytes = message[header_size + color_len:header_size + color_len + depth_len]
+            lid_bytes = message[header_size + color_len + depth_len:header_size + color_len + depth_len+lidar_len]
+            np_img = np.frombuffer(jpg_bytes, dtype=np.uint8)
+            np_lidar=np.frombuffer(lid_bytes,dtype=np.float32)
+            xyz = np_lidar.reshape(-1, 3).copy()
+            # Mount orientation 보정 (예: upside-down)
+            xyz *= np.array([1.0, -1.0, -1.0], dtype=np.float32)
+
             np_img = np.frombuffer(jpg_bytes, dtype=np.uint8)
             if np_img.shape[0] == 0:
                 continue
@@ -574,14 +581,14 @@ def run_client(server_ip="127.0.0.1"):
 
                                     if pt0 is not None and pt1 is not None:
                                         left_length = np.linalg.norm(pt1 - pt0)
-                                        print(f"[info] Left side (0-1) length:  {left_length:.2f} cm")
+                                        #print(f"[info] Left side (0-1) length:  {left_length:.2f} cm")
                                     else:
                                         left_length = None
                                         print("[warn] left face keypoints 0 or 1 is None → 거리 계산 skip")
 
                                     if pt2 is not None and pt3 is not None:
                                         right_length = np.linalg.norm(pt3 - pt2)
-                                        print(f"[info] Right side (1-2) length: {right_length:.2f} cm")
+                                        #print(f"[info] Right side (1-2) length: {right_length:.2f} cm")
                                     else:
                                         right_length = None
                                         print("[warn] right face keypoints 1 or 2 is None → 거리 계산 skip")
@@ -644,21 +651,20 @@ def run_client(server_ip="127.0.0.1"):
             # Send to server and wait for reply
             req_socket.send(packed_msg)
             ack = req_socket.recv()
-            print(f"[Client] Sent YOLO info, got: {ack.decode()}")
+            #print(f"[Client] Sent YOLO info, got: {ack.decode()}")
 
-            if color_image is not None:
-                cv2.imshow("Client View", color_image)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+            #if color_image is not None:
+                #cv2.imshow("Client View", color_image)
+                #if cv2.waitKey(1) & 0xFF == ord('q'):
+                #    break
         except Exception as e:
             print(f"[Client] Exception: {e}")
             break
 
-    req_socket.close()
-    sub_socket.close()
-    context.term()
-    cv2.destroyAllWindows()
-
+    # req_socket.close()
+    # sub_socket.close()
+    # context.term()
+    #cv2.destroyAllWindows()
 
 
 class Controller:
@@ -669,7 +675,7 @@ class Controller:
         # Initialize the policy network
         self.policy_run = torch.jit.load(config.policy_run)
         self.policy_stop = torch.jit.load(config.policy_stop)
-        self.policy_pickup = torch.jit.load(config.policy_pickup)
+        # self.policy_pickup = torch.jit.load(config.policy_pickup)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -678,6 +684,9 @@ class Controller:
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
         self.cmd = np.array([0.0, 0, 0])
         self.counter = 0
+        self.boxdata = None
+        self.YoloClient = None
+        self.hand_ctrl = None
 
         if config.msg_type == "hg":
             # g1 and h1_2 use the hg msg type
@@ -770,15 +779,15 @@ class Controller:
         # move to default pos
         for i in range(num_step):
             alpha = i / num_step
-            for j in range(dof_size):
-                motor_idx = dof_idx[j]
-                target_pos = default_pos[j]
-                self.low_cmd.motor_cmd[motor_idx].q = init_dof_pos[j] * (1 - alpha) + target_pos * alpha
-                self.low_cmd.motor_cmd[motor_idx].qd = 0
-                self.low_cmd.motor_cmd[motor_idx].kp = kps[j]
-                self.low_cmd.motor_cmd[motor_idx].kd = kds[j]
-                self.low_cmd.motor_cmd[motor_idx].tau = 0
-            self.send_cmd(self.low_cmd)
+            # for j in range(dof_size):
+            #     motor_idx = dof_idx[j]
+            #     target_pos = default_pos[j]
+            #     self.low_cmd.motor_cmd[motor_idx].q = init_dof_pos[j] * (1 - alpha) + target_pos * alpha
+            #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+            #     self.low_cmd.motor_cmd[motor_idx].kp = kps[j]
+            #     self.low_cmd.motor_cmd[motor_idx].kd = kds[j]
+            #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+            # self.send_cmd(self.low_cmd)
             time.sleep(self.config.control_dt)
 
     def default_pos_state(self):
@@ -789,31 +798,35 @@ class Controller:
         # self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
         # self.right_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
         
-        # pos
-        self.mode = 0b0001
-        self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
-        self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+        # # pos
+        # self.mode = 0b0001
+        # self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+        # self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
 
-        self.hand_ctrl = Inspire_Controller(self.mode, self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
-        while self.remote_controller.button[KeyMap.A] != 1:
-            for i in range(len(self.config.leg_joint2motor_idx)):
-                motor_idx = self.config.leg_joint2motor_idx[i]
-                self.low_cmd.motor_cmd[motor_idx].q = self.config.default_angles[i]
-                self.low_cmd.motor_cmd[motor_idx].qd = 0
-                self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-                self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-                self.low_cmd.motor_cmd[motor_idx].tau = 0
-            for i in range(len(self.config.arm_waist_joint2motor_idx)):
-                motor_idx = self.config.arm_waist_joint2motor_idx[i]
-                self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i]
-                self.low_cmd.motor_cmd[motor_idx].qd = 0
-                self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-                self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-                self.low_cmd.motor_cmd[motor_idx].tau = 0
-            self.send_cmd(self.low_cmd)
-            time.sleep(self.config.control_dt)
+        # self.hand_ctrl = Inspire_Controller(self.mode, self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
+        self.boxdata = Array('d', 3, lock = False)
+        self.YoloClient = YoloClientProcess(self.boxdata,server_ip="192.168.123.164")
+        print("YoloClientProcess started")
+        # while self.remote_controller.button[KeyMap.A] != 1:
+        #     # for i in range(len(self.config.leg_joint2motor_idx)):
+        #     #     motor_idx = self.config.leg_joint2motor_idx[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].q = self.config.default_angles[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        #     # for i in range(len(self.config.arm_waist_joint2motor_idx)):
+        #     #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+        #     #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        #     # self.send_cmd(self.low_cmd)
+        #     time.sleep(self.config.control_dt)
 
     def run(self):
+        # while True:
         self.counter += 1
         # Get the current joint position and velocity
         for i in range(len(self.config.leg_joint2motor_idx)):
@@ -857,66 +870,68 @@ class Controller:
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
 
-        if np.linalg.norm(self.cmd)<=0.02 and controller.remote_controller.button[KeyMap.X] == 1:
-            self.mode = 0b0100
-            self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
-            self.right_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
-            self.hand_ctrl = Inspire_Controller(self.mode, self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
-            self.action = self.policy_pickup(obs_tensor).detach().numpy().squeeze()
-        elif np.linalg.norm(self.cmd)>0.02:
-            self.mode = 0b0001
-            self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
-            self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
-            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        else:
-            self.mode = 0b0001
-            self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
-            self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
-            self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+        print("boxdata:",self.boxdata[0],self.boxdata[1],self.boxdata[2])
+        
+        # if np.linalg.norm(self.cmd)<=0.02 and controller.remote_controller.button[KeyMap.X] == 1:
+        #     self.mode = 0b0100
+        #     self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
+        #     self.right_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
+        #     self.hand_ctrl = Inspire_Controller(self.mode, self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
+        #     self.action = self.policy_pickup(obs_tensor).detach().numpy().squeeze()
+        # elif np.linalg.norm(self.cmd)>0.02:
+        #     self.mode = 0b0001
+        #     self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+        #     self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        # else:
+        #     self.mode = 0b0001
+        #     self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+        #     self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+        #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
         target_dof_pos = np.concatenate([self.config.default_angles, self.config.arm_default_angles], axis=0) + self.action * self.config.action_scale #29
         # print("target_dof_pos:",*target_dof_pos)
 
-        # Build low cmd
-        # print("leg_joint2motor_idx")
-        for i in range(len(self.config.leg_joint2motor_idx)):
-            # print(target_dof_pos[i],sep=',',end='')
-            motor_idx = self.config.leg_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-            self.low_cmd.motor_cmd[motor_idx].qd = 0
-            self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-            self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-            self.low_cmd.motor_cmd[motor_idx].tau = 0
-        # print("arm_waist_joint2motor_idx")
-        for i in range(len(self.config.arm_waist_joint2motor_idx)):
-            # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-            motor_idx = self.config.arm_waist_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-                                                          self.config.arm_waist_limits_high[i])
-            self.low_cmd.motor_cmd[motor_idx].qd = 0
-            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # # Build low cmd
+        # for i in range(len(self.config.leg_joint2motor_idx)):
+        #     # print(target_dof_pos[i],sep=',',end='')
+        #     motor_idx = self.config.leg_joint2motor_idx[i]
+        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # # print("arm_waist_joint2motor_idx")
+        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
+        #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
+        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
+        #                                                   self.config.arm_waist_limits_high[i])
+        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        if np.any(np.abs(self.dqj) > 20):
-            print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
-            print(f"Terminating robot control for safety.")
-            # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
-            create_damping_cmd(self.low_cmd)
-            self.send_cmd(self.low_cmd)
-            time.sleep(0.1) # 명령 전송 후 잠시 대기
-            raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
+        # if np.any(np.abs(self.dqj) > 20):
+        #     print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
+        #     print(f"Terminating robot control for safety.")
+        #     # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
+        #     create_damping_cmd(self.low_cmd)
+        #     self.send_cmd(self.low_cmd)
+        #     time.sleep(0.1) # 명령 전송 후 잠시 대기
+        #     raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
 
-        # send the command
-        self.send_cmd(self.low_cmd)
+        # # send the command
+        # self.send_cmd(self.low_cmd)
 
         time.sleep(self.config.control_dt)
 
-
 if __name__ == "__main__":
+    # t1 = Thread(target=run_client(server_ip="192.168.123.164"))
+    # t1.daemon = True
+    # t1.start()
     import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument("net", type=str, help="network interface")
     parser.add_argument("config", type=str, help="config file name in the configs folder", default="g1.yaml")
