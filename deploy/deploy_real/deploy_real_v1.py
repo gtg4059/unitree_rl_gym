@@ -21,9 +21,9 @@ from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
 from common.remote_controller import RemoteController, KeyMap
 from config_v1 import Config
-from multiprocessing import Process, shared_memory, Array
-from multiprocessing import shared_memory, Array, Lock
-from robot_control.robot_hand_inspire import Inspire_Controller
+# from multiprocessing import Process, shared_memory, Array
+# from multiprocessing import shared_memory, Array, Lock
+# from robot_control.robot_hand_inspire import Inspire_Controller
 
 
 class Controller:
@@ -171,14 +171,14 @@ class Controller:
     def default_pos_state(self):
         print("Enter default pos state.")
         print("Waiting for the Button A signal...")
-        left_hand_array = Array('d', 6, lock = True)          # [input]
-        right_hand_array = Array('d', 6, lock = True)         # [input]
-        left_hand_array[:] = np.array([0,0,0,0,0,0], dtype=np.float32)
-        right_hand_array[:] = np.array([0,0,0,0,0,0], dtype=np.float32)
-        dual_hand_data_lock = Lock()
-        dual_hand_state_array = Array('d', 12, lock = False)   # [output] current left, right hand state(12) data.
-        dual_hand_action_array = Array('d', 12, lock = False)  # [output] current left, right hand action(12) data.
-        hand_ctrl = Inspire_Controller(left_hand_array, right_hand_array, dual_hand_data_lock, dual_hand_state_array, dual_hand_action_array)
+        # left_hand_array = Array('d', 6, lock = True)          # [input]
+        # right_hand_array = Array('d', 6, lock = True)         # [input]
+        # left_hand_array[:] = np.array([0,0,0,0,0,0], dtype=np.float32)
+        # right_hand_array[:] = np.array([0,0,0,0,0,0], dtype=np.float32)
+        # dual_hand_data_lock = Lock()
+        # dual_hand_state_array = Array('d', 12, lock = False)   # [output] current left, right hand state(12) data.
+        # dual_hand_action_array = Array('d', 12, lock = False)  # [output] current left, right hand action(12) data.
+        # hand_ctrl = Inspire_Controller(left_hand_array, right_hand_array, dual_hand_data_lock, dual_hand_state_array, dual_hand_action_array)
         while self.remote_controller.button[KeyMap.A] != 1:
             for i in range(len(self.config.leg_joint2motor_idx)):
                 motor_idx = self.config.leg_joint2motor_idx[i]
@@ -247,7 +247,8 @@ class Controller:
             self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
-        target_dof_pos = np.concatenate([self.config.default_angles, self.config.arm_default_angles], axis=0) + self.action * self.config.action_scale #29
+        # target_dof_pos = np.concatenate([self.config.default_angles, self.config.arm_default_angles], axis=0) + self.action * self.config.action_scale #29
+        target_dof_pos = self.action * self.config.action_scale #29
         # print("target_dof_pos:",*target_dof_pos)
 
         # Build low cmd
@@ -271,15 +272,15 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-            # 데이터 수집 (매 스텝마다)
-            data_row = {}
+            # # 데이터 수집 (매 스텝마다)
+            # data_row = {}
             
-            # 액션과 목표 위치 추가
-            for i in range(len(self.action)):
-                data_row[f'action_{i}'] = float(self.action[i])
-                data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
+            # # 액션과 목표 위치 추가
+            # for i in range(len(self.action)):
+            #     data_row[f'action_{i}'] = float(self.action[i])
+            #     data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
             
-            self.robot_data.append(data_row)
+            # self.robot_data.append(data_row)
 
         if np.any(np.abs(self.dqj) > 20):
             print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")

@@ -865,6 +865,8 @@ class Controller:
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
+
+        
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
         # print("self.obs:",*self.obs)
         # Get the action from the policy network
@@ -887,6 +889,13 @@ class Controller:
         #     self.mode = 0b0001
         #     self.left_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
         #     self.right_hand_array[:] = np.array([1000,1000,1000,1000,1000,1000], dtype=np.float32)
+        #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+
+        print(controller.remote_controller.button[KeyMap.X])
+
+        # if controller.remote_controller.button[KeyMap.X] == 0:
+        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        # elif controller.remote_controller.button[KeyMap.X] == 0:
         #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
