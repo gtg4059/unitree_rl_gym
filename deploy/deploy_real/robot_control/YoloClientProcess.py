@@ -8,25 +8,335 @@ from ultralytics import YOLO
 from ultralytics.utils.checks import check_yaml
 from ultralytics.utils import YAML
 from legged_gym import LEGGED_GYM_ROOT_DIR
+import pyrealsense2 as rs
+from itertools import combinations
 
 # Configuration
-PORT_IMAGE = 5555
-PORT_SYNC = 6666
-YOLO_MODEL_PATH = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/YOLO/0528_jh_yolov8m_l.pt" #"yolov8_depth/pt/0528_jh_yolov8m_l.pt"
-CLASSES = YAML.load(check_yaml('coco128.yaml'))['names']
-colors = np.random.uniform(0, 255, size=(len(CLASSES), 3))
+PORT_IMAGE = 1234
+PORT_SYNC = 7777
+YOLO_MODEL_PATH = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/YOLO/last_11m.pt" #"yolov8_depth/pt/0528_jh_yolov8m_l.pt"
+# BOX class ID : 1
+KEYPOINT_CLASS_ID = 1
+
+# 박스 실측 사이즈(키포인트 기준)
+D_REF = {
+    (0, 1): 0.345,  # p0-p1
+    (1, 2): 0.220,  # p1-p2
+    (2, 3): 0.345,  # p2-p3
+    (0, 3): 0.220,  # p0-p3
+    (0, 2): 0.410,  # 대각
+    (1, 3): 0.410,  # 대각
+}
+
 detector = cv2.QRCodeDetector()
-previous_box_center_3d = np.array([0, 0, 0])  # 이전 박스 중심점 저장용
-box_center_3d = np.array([0, 0, 0])  # 박스 중심점 초기화
+
+##################################
+#           계산 함수            #
+##################################
+
+def make_rs_intrinsics(depth_intrinsics, width=640, height=480):
+    intr = rs.intrinsics()
+    intr.width  = int(width)
+    intr.height = int(height)
+    intr.ppx    = float(depth_intrinsics[0])  # cx
+    intr.ppy    = float(depth_intrinsics[1])  # cy 
+    intr.fx     = float(depth_intrinsics[2])
+    intr.fy     = float(depth_intrinsics[3])
+    intr.model  = rs.distortion.brown_conrady
+
+    # coeffs는 길이 5의 배열 (k1,k2,p1,p2,k3)
+    intr.coeffs = [0.0]*5
+    for i in range(5):
+        intr.coeffs[i] = float(depth_intrinsics[4 + i])
+    return intr
+
+
+# keypoint 주변 depth 데이터로 보정
+def get_average_depth(depth_image, x, y, depth_scale, window_size=2):
+    depth_values = []
+    H, W = depth_image.shape[:2]
+    for dx in range(-window_size, window_size + 1):
+        for dy in range(-window_size, window_size + 1):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < W and 0 <= ny < H:
+                d = depth_image[ny, nx] * depth_scale
+                if d > 0:
+                    depth_values.append(d)
+    return sum(depth_values) / len(depth_values) if depth_values else None
+
+# 픽셀 좌표를 3D 좌표로 변환
+def deproject_pixel_to_point(intrinsics, pixel, depth):
+    point = rs.rs2_deproject_pixel_to_point(intrinsics, pixel, depth)
+    return point  # [X, Y, Z]
+
+# 인덱스 번호로 접근해서 픽셀좌표 > depth 데이터 호출 > 3D 좌표로 변환
+def kp3d(idx, lookup, depth_image, depth_intrinsics, depth_scale):
+    data = lookup.get(idx)
+    if not data or data["xy"] is None:
+        return None
+    x, y = map(int, data["xy"])
+    d = get_average_depth(depth_image, x, y, depth_scale)
+    if d is None or d <= 0:
+        return None
+    return deproject_pixel_to_point(depth_intrinsics, (x, y), d)  # (3,)
+
+# 3D 좌표를 픽셀 좌표로 변환
+def project_point_to_pixel(intrinsics, point):
+    pixel = rs.rs2_project_point_to_pixel(intrinsics, point)
+    return int(pixel[0]), int(pixel[1])
+
+# plane 추정용 유틸
+def fit_plane_from_points(points3d):
+    P = np.asarray(points3d, dtype=float)
+    c = P.mean(axis=0)
+    Q = P - c
+    _, _, Vt = np.linalg.svd(Q, full_matrices=False)
+    n = Vt[-1]
+    n /= (np.linalg.norm(n) + 1e-12)
+    return c, n
+
+def rot_axis_angle(axis, theta):
+    axis = np.asarray(axis, float)
+    axis /= (np.linalg.norm(axis) + 1e-12)
+    x, y, z = axis
+    c = np.cos(theta); s = np.sin(theta); C = 1 - c
+    return np.array([
+        [c + x*x*C,     x*y*C - z*s,  x*z*C + y*s],
+        [y*x*C + z*s,   c + y*y*C,    y*z*C - x*s],
+        [z*x*C - y*s,   z*y*C + x*s,  c + z*z*C   ]
+    ], dtype=float)
+
+# 키포인트 간 거리가 실측값과 오차가 크지 않은지 검사
+def _key(i, j):  # (i,j) 정렬된 키
+    return (i, j) if i <= j else (j, i)
+
+def validate_points_by_distance(
+    P3, D_REF, conf=None, abs_tol=0.03, rel_tol=0.10, use_conf=True, plane_state=None, single_tol=0.01
+):
+    """
+    P3: {id: np.array([X,Y,Z])}  // 이번 프레임에서 3D 복원된 유효 키포인트만
+    D_REF: {(i,j): d_ref_m}      // 실측 기준 거리(미터). (i<j) 키 권장(변+대각 권장)
+    conf: {id: float in [0,1]}   // (선택) 키포인트 신뢰도. 없으면 전부 1.0
+    abs_tol: 절대 허용오차(m)
+    rel_tol: 상대 허용오차
+    use_conf: True면 페어 비용에 1/min(conf_i, conf_j) 가중
+    plane_state: dict(c0, n, pts0) 형태면 single-point 추정 시 참조
+    single_tol: 입력점이 한 개인 경우, 이전 점과의 허용 3D 거리 임계 (m)
+    """
+    ids = sorted(P3.keys())
+    if conf is None:
+        conf = {i: 1.0 for i in ids}
+
+    if len(ids) == 1:
+        k = ids[0]
+        if (plane_state is None) or ("pts0" not in plane_state) or (k >= len(plane_state["pts0"])):
+            return [], ids, {}
+        p_prev = np.asarray(plane_state["pts0"][k], float)
+        p_now  = np.asarray(P3[k], float)
+        if not np.all(np.isfinite(p_prev)) or not np.all(np.isfinite(p_now)):
+            return [], ids, {}
+        dist = float(np.linalg.norm(p_now - p_prev))
+        if dist <= single_tol:
+            return [k], [], {"(k,)": (dist, single_tol)}
+        else:
+            return [], [k], {"(k,)": (dist, single_tol)}
+    
+    pair_err = {}
+    any_violation = False
+    for i, j in combinations(ids, 2):
+        k = _key(i, j)
+        if k not in D_REF:
+            pair_err[k] = (np.nan, np.nan, np.nan, np.nan, None)
+            any_violation = True
+            continue
+        d_obs = float(np.linalg.norm(P3[i] - P3[j]))
+        d_ref = float(D_REF[k])
+        err   = abs(d_obs - d_ref)
+        thr   = max(abs_tol, rel_tol * d_ref)
+        ok    = err <= thr
+        pair_err[k] = (d_obs, d_ref, err, thr, ok)
+        if not ok:
+            any_violation = True
+            print(f"[DEBUG] pair {i}-{j}: d_obs={d_obs:.4f}, d_ref={d_ref:.4f}, err={err:.4f}, thr={thr:.4f} -> EXCEEDED")
+
+    if not any_violation:
+        return ids, [], pair_err
+
+    best_subset = None
+    best_score  = float("inf")
+    for sz in range(len(ids), 1, -1):
+        for S in combinations(ids, sz):
+            S = list(S)
+            pairs = list(combinations(S, 2))
+            if not pairs:
+                continue
+            all_ok = True
+            score = 0.0
+            cnt = 0
+            for a, b in pairs:
+                k = _key(a, b)
+                if k not in pair_err:
+                    all_ok = False; break
+                d_obs, d_ref, err, thr, ok = pair_err[k]
+                if ok is False:
+                    all_ok = False; break
+                if ok is None:
+                    continue
+                w = 1.0 / max(1e-3, min(conf.get(a,1.0), conf.get(b,1.0))) if use_conf else 1.0
+                score += w * (err / (thr + 1e-12))
+                cnt   += 1
+            if not all_ok or cnt == 0:
+                continue
+            score /= cnt
+            if (best_subset is None) or (len(S) > len(best_subset)) or \
+               (len(S) == len(best_subset) and score < best_score):
+                best_subset = S
+                best_score  = score
+
+        if best_subset is not None:
+            break
+
+    if best_subset is None:
+        return [], ids, pair_err
+
+    inliers  = list(best_subset)
+    outliers = [i for i in ids if i not in inliers]
+    return inliers, outliers, pair_err
+
+
+##################################
+#     평면 상태(함수형) 유틸     #
+##################################
+
+# plane_state는 dict로 관리: {"c0": np.ndarray(3,), "n": np.ndarray(3,), "pts0": (4,3) array}
+
+def tracked_plane_init(p0, p1, p2, p3):
+    pts = np.vstack([p0, p1, p2, p3]).astype(float)  # (4,3)
+    c0, n = fit_plane_from_points(pts)
+    return {"c0": c0.copy(), "n": n.copy(), "pts0": pts.copy()}
+
+def tracked_plane_apply(state, R, t, c_hat):
+    # 상태 갱신: c0, pts0, n
+    new_state = {
+        "c0": np.asarray(c_hat, float).copy(),
+        "pts0": (R @ state["pts0"].T).T + t,
+        "n": (R @ state["n"])
+    }
+    new_state["n"] /= (np.linalg.norm(new_state["n"]) + 1e-12)
+    return new_state
+
+def tracked_plane_estimate_center_from_one_idx(state, k, p_new):
+    pk0 = state["pts0"][int(k)]
+    t = np.asarray(p_new, float) - pk0
+    return state["c0"] + t  # c_hat
+
+def tracked_plane_estimate_two(state, i, j, pi_new, pj_new, wi=1.0, wj=1.0, max_drift=None):
+    n = state["n"]
+    pi0, pj0 = state["pts0"][int(i)], state["pts0"][int(j)]
+    v0 = pj0 - pi0
+    v1 = np.asarray(pj_new) - np.asarray(pi_new)
+    v0p = v0 - np.dot(v0, n) * n
+    v1p = v1 - np.dot(v1, n) * n
+
+    if np.linalg.norm(v0p) < 1e-9 or np.linalg.norm(v1p) < 1e-9:
+        R = np.eye(3)
+    else:
+        u0 = v0p / np.linalg.norm(v0p)
+        u1 = v1p / np.linalg.norm(v1p)
+        sin_th = float(np.dot(n, np.cross(u0, u1)))
+        cos_th = float(np.dot(u0, u1))
+        theta = np.arctan2(sin_th, cos_th)
+        R = rot_axis_angle(n, theta)
+
+    t_i = np.asarray(pi_new) - R @ pi0
+    t_j = np.asarray(pj_new) - R @ pj0
+    t = (wi * t_i + wj * t_j) / (wi + wj + 1e-12)
+
+    if max_drift is not None:
+        norm_t = np.linalg.norm(t)
+        if norm_t > max_drift:
+            t = t * (max_drift / (norm_t + 1e-12))
+
+    c_hat = R @ state["c0"] + t
+    r = float(np.linalg.norm(v1p) / (np.linalg.norm(v0p) + 1e-12)) if np.linalg.norm(v0p) > 0 else 1.0
+    residual = float(
+        np.linalg.norm((R @ pi0 + t) - pi_new) +
+        np.linalg.norm((R @ pj0 + t) - pj_new)
+    )
+    return c_hat, R, t, residual, r
+
+def tracked_plane_estimate_three(state, idxs, P_new, w=None, area_tol=1e-6):
+    A = state["pts0"][list(idxs)].astype(float)   # (3,3) 기준 3D
+    B = np.asarray(P_new, float).reshape(3, 3)    # (3,3) 현재 3D
+
+    area = 0.5 * np.linalg.norm(np.cross(A[1] - A[0], A[2] - A[0]))
+    if area < area_tol:
+        return None
+
+    if w is None:
+        ca, cb = A.mean(axis=0), B.mean(axis=0)
+        Ac, Bc = A - ca, B - cb
+        H = Ac.T @ Bc
+    else:
+        w = np.asarray(w, float).reshape(3, 1)
+        w = w / (w.sum() + 1e-12)
+        ca = (A * w).sum(axis=0)
+        cb = (B * w).sum(axis=0)
+        Ac, Bc = A - ca, B - cb
+        H = (Ac * w).T @ Bc
+
+    U, S, Vt = np.linalg.svd(H)
+    R = Vt.T @ U.T
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+
+    t = cb - R @ ca
+    c_hat = R @ state["c0"] + t
+    residual = float(np.mean(np.linalg.norm((R @ A.T).T + t - B, axis=1)))
+    return c_hat, R, t, residual
+
+
+##################################
+#          시각화 함수            #
+##################################
+
+def draw_label(img, text, x1, y1, x2, y2, color_bgr, margin=3):
+    H, W = img.shape[:2]
+    color_bgr = tuple(int(c) for c in color_bgr)
+
+    tl = 2
+    tf = max(tl - 1, 1)
+    fs = tl / 3
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, fs, tf)
+
+    tx, ty = int(x1), int(y1 - th - margin)
+    if ty < 0:
+        tx = int(x2 - tw)
+        ty = int(y2 + margin)
+
+    tx = max(0, min(tx, W - tw - 1))
+    ty = max(0, min(ty, H - (th + margin) - 1))
+
+    cv2.rectangle(img, (tx, ty), (tx + tw, ty + th + margin), color_bgr, -1, cv2.LINE_AA)
+    cv2.putText(img, text, (tx, ty + th), cv2.FONT_HERSHEY_SIMPLEX, fs,
+                (255, 255, 255), thickness=tf, lineType=cv2.LINE_AA)
+
+
+#############################################################################
+# Dummy image for testing
+def dummy_image():
+    return np.full((480, 640, 3), 255, dtype=np.uint8)
+#############################################################################
 
 class YoloClientProcess:
     def __init__(self, boxdata, server_ip="127.0.0.1",):
         # box_center_3d = box_center_3d
         self.server_ip = server_ip
-        self.left_hand_array = Array('d', 6, lock=True)
+        # self.left_hand_array = Array('d', 6, lock=True)
         # self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
         self.boxdata = Array('d', 3, lock=True)
-        self.box_center_3d = np.array([0, 0, 0],dtype=np.float32)  # 박스 중심점 초기화
+        # self.box_center_3d = np.array([0, 0, 0],dtype=np.float32)  # 박스 중심점 초기화
 
         client_process = Process(target=self.run_client, args=(boxdata,))
         client_process.daemon = True
@@ -210,8 +520,8 @@ class YoloClientProcess:
         return np.full((480, 640, 3), 255, dtype=np.uint8)
 
     def run_client(self, boxdata=None):
-        print("[run_client] Control process started.")
         context = zmq.Context()
+
         # SUB socket for receiving image
         sub_socket = context.socket(zmq.SUB)
         sub_socket.connect(f"tcp://{self.server_ip}:{PORT_IMAGE}")
@@ -222,6 +532,7 @@ class YoloClientProcess:
         req_socket.connect(f"tcp://{self.server_ip}:{PORT_SYNC}")
 
         model = YOLO(YOLO_MODEL_PATH)
+        NAMES = model.names   
         print("[Client] Started")
 
         # Create message: 1.0 + 7 dummy float values
@@ -231,23 +542,22 @@ class YoloClientProcess:
         # Send to server and wait for reply
         req_socket.send(packed_msg)
         ack = req_socket.recv()
-        print(f"[Client] Sent YOLO info, got: {ack.decode()}")
 
-        try:
-            while True:
+        rng = np.random.default_rng(42)
+        colors = (rng.uniform(0, 255, size=(len(NAMES), 3))).astype(np.uint8)
+
+        plane_state = None
+
+        while True:
+            try:
                 # Receive image
                 message = sub_socket.recv()
-                header_size = struct.calcsize('iii9f')
+                header_size = struct.calcsize('iii10f')
                 header = message[:header_size]
-                lidar_len, color_len, depth_len, *depth_intrinsics = struct.unpack('iii9f', header)
+                lidar_len, color_len, depth_len, *depth_intrinsics, depth_scale = struct.unpack('iii10f', header)
                 jpg_bytes = message[header_size:header_size + color_len]
                 png_bytes = message[header_size + color_len:header_size + color_len + depth_len]
-                lid_bytes = message[header_size + color_len + depth_len:header_size + color_len + depth_len+lidar_len]
-                np_img = np.frombuffer(jpg_bytes, dtype=np.uint8)
-                np_lidar=np.frombuffer(lid_bytes,dtype=np.float32)
-                xyz = np_lidar.reshape(-1, 3).copy()
-                # Mount orientation 보정 (예: upside-down)
-                xyz *= np.array([1.0, -1.0, -1.0], dtype=np.float32)
+                lid_bytes = message[header_size + color_len + depth_len:header_size + color_len + depth_len + lidar_len]
 
                 np_img = np.frombuffer(jpg_bytes, dtype=np.uint8)
                 if np_img.shape[0] == 0:
@@ -258,399 +568,159 @@ class YoloClientProcess:
                 if np_depth.shape[0] == 0:
                     continue
                 depth_image = cv2.imdecode(np_depth, cv2.IMREAD_UNCHANGED)
-                depth_display = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
-                depth_display = depth_display.astype(np.uint8)
-                depth_display = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
+                depth_intrinsics = make_rs_intrinsics(depth_intrinsics, width=640, height=480)
 
                 # Run YOLO
-                results = model(color_image)
-                class_ids = []
-                confidences = []
-                bboxes = []
-                for result in results:
-                    boxes = result.boxes
-                    for box in boxes:
-                        confidence = box.conf
-                        if confidence > 0.5:
-                            xyxy = box.xyxy.tolist()[0]
-                            bboxes.append(xyxy)
-                            confidences.append(float(confidence))
-                            class_ids.append(box.cls.tolist())
+                results = model(color_image, stream=True, conf=0.5)
 
-                result_boxes = cv2.dnn.NMSBoxes(bboxes, confidences, 0.25, 0.45, 0.5)
-                # print("line 280 : ",box_center_3d,type(box_center_3d))
-                for i in range(len(bboxes)):
-                    # calss id 0번(박스)인 경우
-                    if int(box.cls) == 0:
-                        if i in result_boxes:
-                            bbox = list(map(int, bboxes[i]))
-                            keypoints = result.keypoints
-                            x1, y1, x2, y2 = bbox
+                for res in results:
+                    has_kpts = res.keypoints is not None
+                    boxes = res.boxes
 
-                            label = "box"
+                    for i, b in enumerate(boxes):
+                        conf = float(b.conf.item())
+                        if conf < 0.5:
+                            continue
 
-                            color = colors[i]
-                            color = (int(color[0]), int(color[1]), int(color[2]))
+                        x1, y1, x2, y2 = map(int, b.xyxy[0].tolist())
+                        cls_id = int(b.cls.item())
+                        name = NAMES.get(cls_id, str(cls_id))
+                        color = tuple(int(c) for c in colors[cls_id])  # BGR
 
-                            tl = 2  # line/font thickness
-                            tf = max(tl - 1, 1)  # font thickness
-                            t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
-                            c2 = x1 + t_size[0], y1 - t_size[1] - 3
+                        cv2.rectangle(color_image, (x1, y1), (x2, y2), color, 2)
+                        label = f"{name} {conf:.2f}"
+                        draw_label(color_image, label, x1, y1, x2, y2, color)
 
-                            # color rectangle
-                            cv2.rectangle(color_image, (x1, y1), (x2, y2), color, 2)
-                            # label rectangle
-                            cv2.rectangle(color_image, (x1, y1), c2, color, -1, cv2.LINE_AA)
-                            # label
-                            cv2.putText(color_image, label, (x1, y1 - 2), 0, tl / 3, [255, 255, 255], thickness=tf,
-                                        lineType=cv2.LINE_AA)
+                        if has_kpts and cls_id == KEYPOINT_CLASS_ID:
+                            kpts_xy   = res.keypoints.xy[i].cpu().numpy()    # (K, 2)
+                            kpts_conf = res.keypoints.conf[i].cpu().numpy()  # (K,)
 
-                            if keypoints is not None:
-                                kps = keypoints.xy[i].cpu().numpy()
-                                kcs = keypoints.conf[i].cpu().numpy()
+                            KPT_THR = 0.5
+                            EPS = 1e-6
+                            H, W = color_image.shape[:2]
 
-                                keypoints_pixel_dict = {}
+                            mask_conf    = (kpts_conf >= KPT_THR)
+                            mask_nonzero = (np.abs(kpts_xy[:, 0]) > EPS) | (np.abs(kpts_xy[:, 1]) > EPS)
+                            mask_bounds  = (kpts_xy[:, 0] >= 0) & (kpts_xy[:, 0] < W) & \
+                                        (kpts_xy[:, 1] >= 0) & (kpts_xy[:, 1] < H)
+                            mask = mask_conf & mask_nonzero & mask_bounds
 
-                                for idx, (kp, conf) in enumerate(zip(kps, kcs)):
-                                    kx, ky = int(kp[0]), int(kp[1])
-                                    valid_pixel = 1
-                                    if (kx == 0 and ky == 0) or (conf < 0.01):
-                                        valid_pixel = 0
-                                    keypoints_pixel_dict[idx] = {"pixel": (kx, ky), "valid": valid_pixel}
+                            valid_idx  = np.flatnonzero(mask)          # (M,)
+                            valid_xy   = kpts_xy[valid_idx]            # (M, 2)
+                            valid_conf = kpts_conf[valid_idx]          # (M,)
 
-                                diagonals = {
-                                    "top1": [0, 2],
-                                    "top2": [1, 3],
-                                    "left1": [0, 5],
-                                    "left2": [1, 4],
-                                    "right1": [1, 6],
-                                    "right2": [2, 5]
-                                }
+                            for (kx, ky) in valid_xy:
+                                cv2.circle(color_image, (int(kx), int(ky)), 3, (0, 255, 0), -1)
 
-                                valid_flags = {name: all(keypoints_pixel_dict[idx]["valid"] for idx in indices) for
-                                            name, indices in diagonals.items()}
+                            lookup = {
+                                int(k): {"xy": (float(kpts_xy[k, 0]), float(kpts_xy[k, 1])),
+                                        "conf": float(kpts_conf[k])}
+                                for k in valid_idx
+                            }
 
-                                faces = {
-                                    "top": ("top1", "top2"),
-                                    "left": ("left1", "left2"),
-                                    "right": ("right1", "right2")
-                                }
-                                temp_face_centers_pixel = {}
+                            need_ids = [0, 1, 2, 3]
 
-                                # 픽셀로 면의 중점 구하기
-                                for face_name, (diag1, diag2) in faces.items():
-                                    diag1_ok = valid_flags[diag1]
-                                    diag2_ok = valid_flags[diag2]
+                            # 3D 복원
+                            P3 = {}  # {kpt_id: np.array([X,Y,Z])}
+                            for k in need_ids:
+                                if k in lookup:
+                                    pt3 = kp3d(k, lookup, depth_image, depth_intrinsics, depth_scale)
+                                    if pt3 is not None:
+                                        P3[k] = np.array(pt3, dtype=float)
 
-                                    temp_centers = []
-                                    if diag1_ok and diag2_ok:
-                                        for idx in diagonals[diag1] + diagonals[diag2]:
-                                            temp_centers.append(keypoints_pixel_dict[idx]["pixel"])
-                                    elif diag1_ok:
-                                        for idx in diagonals[diag1]:
-                                            temp_centers.append(keypoints_pixel_dict[idx]["pixel"])
-                                    elif diag2_ok:
-                                        for idx in diagonals[diag2]:
-                                            temp_centers.append(keypoints_pixel_dict[idx]["pixel"])
+                            conf_dict = {k: float(kpts_conf[k]) for k in P3.keys()}
+                            present, outliers, pair_err = validate_points_by_distance(
+                                P3, D_REF, conf=conf_dict, abs_tol=0.5, rel_tol=0.20, plane_state=plane_state
+                            )
 
-                                    if temp_centers:
-                                        points_np = np.array(temp_centers)
-                                        center_x, center_y = np.mean(points_np, axis=0)
-                                        temp_face_centers_pixel[face_name] = (center_x, center_y)
-                                    else:
-                                        temp_face_centers_pixel[face_name] = None
+                            # plane_state 있으면 업데이트
+                            if plane_state is not None:
+                                if len(present) == 4 and set(present) == set(need_ids):
+                                    # 4점 모두 보임 → 재초기화
+                                    p = [P3[k] for k in need_ids]
+                                    plane_state = tracked_plane_init(*p)
 
-                                face_keypoints = {
-                                    "top": [0, 1, 2, 3],
-                                    "left": [0, 1, 5, 4],
-                                    "right": [1, 2, 6, 5]
-                                }
-                                offset = 0.08  # 이동 비율
-                                corrected_faces = {}  # 보정된 포인트 저장
-
-                                # 중점 방향으로 keypoint 이동시키기
-                                for face_name, indices in face_keypoints.items():
-                                    face_center = temp_face_centers_pixel.get(face_name)
-
-                                    if face_center is None:
-                                        corrected_faces[face_name] = None  # 이 face는 invalid
-                                        continue
-
-                                    face_center = np.array(face_center)
-                                    corrected_points = []
-
-                                    for idx in indices:
-                                        pixel = np.array(keypoints_pixel_dict[idx]["pixel"])
-                                        valid = keypoints_pixel_dict[idx]["valid"]
-
-                                        if not valid:
-                                            corrected_points.append(None)  # invalid 모서리는 None으로 표시
-                                            continue
-
-                                        # face 중심 방향으로 offset 이동
-                                        direction = face_center - pixel
-                                        corrected_pixel = pixel + offset * direction
-
-                                        corrected_points.append(tuple(corrected_pixel.astype(int)))
-
-                                    corrected_faces[face_name] = corrected_points
-
-                                face_3d_points = {}  # face별 3D 포인트 저장
-                                face_centers_3d = {}  # face별 중심 3D 좌표 저장
-                                face_normals_3d = {}  # face별  법선 벡터 좌표 저장
-
-                                # 박스의 중심 구하기
-                                for face_name, points in corrected_faces.items():
-                                    if points is None:
-                                        face_3d_points[face_name] = None
-                                        face_centers_3d[face_name] = None
-                                        continue
-
-                                    points_3d = []
-                                    for pt in points:
-                                        if pt is None:
-                                            points_3d.append(None)
-                                            continue
-
-                                        kx, ky = pt
-                                        # print("1st get average depth")
-                                        depth = self._get_average_depth(depth_image, kx, ky, window_size=3)
-
-                                        if depth == 0.0:
-                                            points_3d.append(None)
-                                            continue
-
-                                        point_3d = self._deproject_pixel_to_point(depth_intrinsics, (kx, ky), depth)
-                                        point_3d = np.array(point_3d) * 100  # meter → cm 변환
-                                        points_3d.append(point_3d)
-
-                                    face_3d_points[face_name] = points_3d
-                                    face_centers_3d[face_name] = self._compute_center_3d(points_3d)
-
-                                    face_normals_3d[face_name] = self._compute_normal_from_points(points_3d)
-
-                                ### QR 인식 파트
-                                '''found_text = False
-                                display_texts = []
-                                # scale = 1.0
-                                recognized_text = None
-
-                                for face_name, points in corrected_faces.items():
-                                    if face_name in ["left", "right"] and points is not None:
-                                        if found_text:
-                                            break
-
-                                        points_3d = face_3d_points.get(face_name)
-                                        if points_3d is None or any(p is None for p in points_3d):
-                                            continue
-
-                                        src_pts_2d = np.array([
-                                            project_point_to_pixel(depth_intrinsics, p / 100.0)  # cm -> m 변환
-                                            for p in points_3d
-                                        ], dtype=np.float32)
-
-                                        def euclidean(p1, p2):
-                                            return np.linalg.norm(np.array(p1) - np.array(p2))
-
-                                        width_3d = euclidean(points_3d[0], points_3d[1])
-                                        height_3d = euclidean(points_3d[0], points_3d[3])
-                                        scale = 300.0 / max(width_3d, height_3d)
-                                        width_px = int(width_3d * scale)
-                                        height_px = int(height_3d * scale)
-
-                                        dst_pts_2d = np.array([
-                                            [0, 0],
-                                            [width_px, 0],
-                                            [width_px, height_px],
-                                            [0, height_px]
-                                        ], dtype=np.float32)
-
-                                        # Homography 및 warp
-                                        M = cv2.getPerspectiveTransform(src_pts_2d, dst_pts_2d)
-                                        warped = cv2.warpPerspective(color_image, M, (width_px, height_px))
-
-                                        # gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
-                                        # gray_eq = cv2.equalizeHist(gray)
-                                        # gray_eq = cv2.resize(gray_eq, None, fx=2.0, fy=2.0)
-                                        warped = cv2.resize(warped, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_NEAREST)
-
-                                        # _, thresh = cv2.threshold(gray_eq, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-                                        # padded = cv2.copyMakeBorder(gray_eq, 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=255)
-
-                                        # QR 코드 인식
-                                        retval, decoded_info, qr_points, _ = detector.detectAndDecodeMulti(warped)
-                                        if retval:
-                                            for data in decoded_info:
-                                                display_texts.append(data)
-                                                recognized_text = data
-                                                print(f"[QR:{face_name}] {data}")
-                                                found_text = True
-                                                #cv2.imshow(f"{face_name}_roi", warped)
-                                                key = cv2.waitKey(1)
-                                                break
-
-                                        if not found_text:
-                                            decoded = decode(warped)
-                                            for obj in decoded:
-                                                data = obj.data.decode('utf-8')
-                                                if data:
-                                                    display_texts.append(data)
-                                                    recognized_text = data
-                                                    print(f"[QR:{face_name}] {data}")
-                                                    found_text = True
-                                                    #cv2.imshow(f"{face_name}_roi", warped)
-                                                    key = cv2.waitKey(1)
-                                                    break
-
-                                if found_text:
-                                    cv2.putText(color_image, recognized_text, (20, 50 + 40 * idx),
-                                                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)'''
-
-                                ### 박스에 면의 중점 및 박스의 중심 표시
-                                for face_name, points in corrected_faces.items():
-                                    if points is None:
-                                        continue
-
-                                    # 기본 색상
-                                    color = (0, 255, 0) if face_name == "top" else (255, 0, 0) if face_name == "left" else (
-                                        0, 0, 255)
-
-                                    center_3d = face_centers_3d.get(face_name)
-                                    center_pixel = None
-                                    exclude_face_from_box_center = False
-
-                                    # 중심점 3D → 2D 변환
-                                    if center_3d is not None:
-                                        center_pixel = self._project_point_to_pixel(depth_intrinsics, center_3d / 100.0)
-
-                                    # top 면이면, 실측 depth 비교해서 색상 변경
-                                    if face_name == "top" and center_3d is not None and center_pixel is not None:
-                                        cx, cy = center_pixel
-                                        # print( "2nd get average depth")
-                                        actual_depth = self._get_average_depth(depth_image, cx, cy, window_size=2)
-                                        center_depth = center_3d[2] / 100.0  # cm → m
-
-                                        if actual_depth > center_depth + 0.01:  # 1cm 차이 허용
-                                            color = (255, 255, 255)
-                                            center_3d = None
-                                            exclude_face_from_box_center = True
-
-                                    if exclude_face_from_box_center:
-                                        face_normals_3d[face_name] = None
-
-                                    points_valid = [pt for pt in points if pt is not None]
-
-                                    # 외곽선 그리기
-                                    if len(points_valid) >= 2:
-                                        for j in range(len(points_valid)):
-                                            pt1 = points_valid[j]
-                                            pt2 = points_valid[(j + 1) % len(points_valid)]
-                                            cv2.line(color_image, pt1, pt2, color, 2)
-
-                                    # 중심점 그리기
-                                    if center_3d is not None and center_pixel is not None:
-                                        cv2.circle(color_image, center_pixel, 5, (0, 255, 255), -1)
-
-                                        label = f"{face_name}\nX:{center_3d[0]:.1f} Y:{center_3d[1]:.1f} Z:{center_3d[2]:.1f}"
-                                        for i, line in enumerate(label.split("\n")):
-                                            cv2.putText(color_image, line, (center_pixel[0], center_pixel[1] + i * 15),
-                                                        cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), 1)
-
-                                # print("line 559 : ",box_center_3d,type(box_center_3d))
-                                # print(face_centers_3d, face_normals_3d)
-                                box_center_3d = self._compute_box_center_from_faces(face_centers_3d, face_normals_3d)
-                                # print("line 561 : ",box_center_3d,type(box_center_3d))
-                                # 박스 중심점 및 x축 표시
-                                if box_center_3d is not None:
-
-                                    x_unit = None
-
-                                    if face_3d_points.get("left") and face_3d_points.get("right"):
-                                        pts_left = face_3d_points["left"]
-                                        pts_right = face_3d_points["right"]
-
-                                        pt0, pt1 = pts_left[0], pts_left[1]
-                                        pt2, pt3 = pts_right[0], pts_right[1]
-
-                                        if pt0 is not None and pt1 is not None:
-                                            left_length = np.linalg.norm(pt1 - pt0)
-                                            #print(f"[info] Left side (0-1) length:  {left_length:.2f} cm")
+                                elif len(present) == 3:
+                                    tri = next((c for c in [(0,1,2),(0,1,3),(0,2,3),(1,2,3)]
+                                                if all(k in present for k in c)), None)
+                                    if tri is not None:
+                                        P_new = [P3[k] for k in tri]
+                                        w = [float(kpts_conf[k]) for k in tri]
+                                        out = tracked_plane_estimate_three(plane_state, tri, P_new, w=w)
+                                        if out is not None:
+                                            c_hat, R, t, res = out
+                                            plane_state = tracked_plane_apply(plane_state, R, t, c_hat)
                                         else:
-                                            left_length = None
-                                            print("[warn] left face keypoints 0 or 1 is None → 거리 계산 skip")
+                                            pair = next((p for p in [(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]
+                                                        if p[0] in present and p[1] in present), None)
+                                            if pair is not None:
+                                                i0, j0 = pair
+                                                pi_new, pj_new = P3[i0], P3[j0]
+                                                wi = float(kpts_conf[i0]); wj = float(kpts_conf[j0])
+                                                c_hat, R, t, residual, r = tracked_plane_estimate_two(
+                                                    plane_state, i0, j0, pi_new, pj_new, wi=wi, wj=wj
+                                                )
+                                                plane_state = tracked_plane_apply(plane_state, R, t, c_hat)
 
-                                        if pt2 is not None and pt3 is not None:
-                                            right_length = np.linalg.norm(pt3 - pt2)
-                                            #print(f"[info] Right side (1-2) length: {right_length:.2f} cm")
-                                        else:
-                                            right_length = None
-                                            print("[warn] right face keypoints 1 or 2 is None → 거리 계산 skip")
-
-                                    if (face_centers_3d.get("left") is not None and
-                                            face_centers_3d.get("right") is not None and
-                                            left_length is not None and
-                                            right_length is not None):
-
-                                        left_center = face_centers_3d["left"]
-                                        right_center = face_centers_3d["right"]
-
-                                        if left_length < right_length:
-                                            # 왼쪽이 더 가까우면 → 오른쪽 방향(x축은 box → right)
-                                            x_dir = np.array(box_center_3d) - np.array(right_center)
-                                        else:
-                                            # 오른쪽이 더 가까우면 → 왼쪽 방향(x축은 box → left)
-                                            x_dir = np.array(box_center_3d) - np.array(left_center)
-
-                                        x_unit = x_dir / (np.linalg.norm(x_dir) + 1e-6)
-
-                                        previous_x_unit = x_unit
-                                        previous_box_center_3d = box_center_3d
-
-                                    else:
-                                        print("[warn] 거리 측정 실패 -> 이전 x축 벡터 사용")
-
-                                        if 'previous_x_unit' in globals() and 'previous_box_center_3d' in globals():
-                                            x_unit = previous_x_unit
-                                            box_center_3d = previous_box_center_3d
-                                        else:
-                                            x_unit = None
-
-                                    box_center_pixel = self._project_point_to_pixel(depth_intrinsics, box_center_3d / 100.0)
-                                    cv2.circle(color_image, box_center_pixel, 5, (0, 255, 255), -1)
-
-                                    if x_unit is not None:
-                                        origin_px = self._project_point_to_pixel(depth_intrinsics, box_center_3d / 100.0)
-                                        x_arrow_end = self._project_point_to_pixel(depth_intrinsics, (
-                                                    box_center_3d + x_unit * 10) / 100.0)  # 길이 10cm
-
-                                        cv2.arrowedLine(color_image, origin_px, x_arrow_end, (0, 0, 255), 2)  # 빨강: X축
-
-                                        label = (
-                                            f"Box Center\n"
-                                            f"X:{box_center_3d[0]:.1f} Y:{box_center_3d[1]:.1f} Z:{box_center_3d[2]:.1f}\n"
-                                            f"x_dir: ({x_unit[0]:.2f}, {x_unit[1]:.2f}, {x_unit[2]:.2f})"
+                                elif len(present) == 2:
+                                    pair = next((p for p in [(0,1),(0,2),(0,3),(1,2),(1,3),(2,3)]
+                                                if p[0] in present and p[1] in present), None)
+                                    if pair is not None:
+                                        i0, j0 = pair
+                                        pi_new, pj_new = P3[i0], P3[j0]
+                                        wi = float(kpts_conf[i0]); wj = float(kpts_conf[j0])
+                                        c_hat, R, t, residual, r = tracked_plane_estimate_two(
+                                            plane_state, i0, j0, pi_new, pj_new, wi=wi, wj=wj
                                         )
-                                        for i, line in enumerate(label.split("\n")):
-                                            cv2.putText(color_image, line,
-                                                        (origin_px[0] + 10, origin_px[1] + i * 15),
-                                                        cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), 1)
+                                        plane_state = tracked_plane_apply(plane_state, R, t, c_hat)
 
-                
-                # Create message: 1.0 + 7 dummy float values
-                print(box_center_3d,type(box_center_3d))
-                yolo_result = [1.0] + list(box_center_3d) + [0.0] * 4
-                # yolo_result = [1.0] + [0.0] * 7
+                                elif len(present) == 1:
+                                    k = present[0]
+                                    c_hat = tracked_plane_estimate_center_from_one_idx(plane_state, k, P3[k])
+                                    # pts0도 동일 평행이동 적용(해당 점 기준)
+                                    delta = P3[k] - plane_state["pts0"][k]
+                                    plane_state = {
+                                        "c0": c_hat,
+                                        "n": plane_state["n"],
+                                        "pts0": plane_state["pts0"] + delta
+                                    }
+
+                            # plane_state 없으면 초기화
+                            if plane_state is None and len(present) == 4 and set(present) == set(need_ids):
+                                p = [P3[k] for k in need_ids]
+                                plane_state = tracked_plane_init(*p)
+
+                if plane_state is not None:
+                    c0_text = f"({plane_state['c0'][0]:.2f}, {plane_state['c0'][1]:.2f}, {plane_state['c0'][2]:.2f})"
+                    center_pixel = project_point_to_pixel(depth_intrinsics, plane_state["c0"])
+                    u, v = map(int, center_pixel)
+                    cv2.circle(color_image, (u, v), radius=5, color=(0, 0, 255), thickness=-1)
+                    cv2.putText(color_image, c0_text, (u + 10, v - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                    yolo_result = [1.0] + list(plane_state["c0"]) + [0.0] * 4
+                else:
+                    yolo_result = [1.0] + [0.0] * 7
+
                 packed_msg = struct.pack("8f", *yolo_result)
-                boxdata[:] = box_center_3d
-                # Send to server and wait for reply
                 req_socket.send(packed_msg)
                 ack = req_socket.recv()
-        except Exception as e:
-            print(f"[YoloClientProcess] Exception: {e}")
-            traceback.print_exc()
+                print(f"[Client] Sent YOLO info, got: {ack.decode()}")
+
+                # if color_image is not None:
+                #     cv2.imshow("Client View", color_image)
+                #     if cv2.waitKey(1) & 0xFF == ord('q'):
+                #         break
+                if plane_state is not None:
+                    boxdata[:] = np.array(plane_state["c0"], dtype=np.float32)
+                else:
+                    boxdata[:] = np.array([0, 0, 0], dtype=np.float32)
+                print(boxdata[:])
+            except Exception as e:
+                print(f"[Client] Exception: {e}")
+                traceback.print_exc()
+                break
 
         req_socket.close()
         sub_socket.close()
         context.term()
+        # cv2.destroyAllWindows()
 

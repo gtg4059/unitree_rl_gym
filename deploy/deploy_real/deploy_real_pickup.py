@@ -955,17 +955,15 @@ if __name__ == "__main__":
     # Enter the default position state, press the A key to continue executing
     controller.default_pos_state()
 
-    run_client(server_ip="192.168.123.164")
-
-    # while True:
-    #     try:
-    #         controller.run()
-    #         # Press the select key to exit
-    #         if controller.remote_controller.button[KeyMap.select] == 1:
-    #             break
-    #     except KeyboardInterrupt:
-    #         break
-    # # Enter the damping state
-    # create_damping_cmd(controller.low_cmd)
-    # controller.send_cmd(controller.low_cmd)
-    # print("Exit")
+    while True:
+        try:
+            controller.run()
+            # Press the select key to exit
+            if controller.remote_controller.button[KeyMap.select] == 1:
+                break
+        except KeyboardInterrupt:
+            break
+    # Enter the damping state
+    create_damping_cmd(controller.low_cmd)
+    controller.send_cmd(controller.low_cmd)
+    print("Exit")

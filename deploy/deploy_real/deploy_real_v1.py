@@ -241,7 +241,7 @@ class Controller:
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
 
-        if np.linalg.norm(self.cmd)>0.02:
+        if controller.remote_controller.button[KeyMap.X] == 1:
             self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         else:
             self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
