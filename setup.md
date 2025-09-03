@@ -4,21 +4,10 @@
 git clone https://github.com/NaCl-1374/inspire_hand_ws.git
 ```
 
-- inspire_hand_ws 진입, venv_x86 압축 해제 후, 코드 실행
-
-```bash
-python -m venv venv  # or  Unzip venv_x86.tar.xz, and place the.venv in inspire_hand_ws/.venv
-
-# Then execute the script to modify venv:
-python update_venv_path.py .venv
-python update_bin_files.py .venv 
-
-source venv/bin/activate  # Activate the virtual environment for Linux/MacOS
-```
-
 - Initialize and update submodules:
 
 ```bash
+cd inspire_hand_ws
 git submodule init  # Initialize submodules
 git submodule update  # Update submodules to the latest version
 ```

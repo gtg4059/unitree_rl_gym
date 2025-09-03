@@ -14,7 +14,7 @@ from itertools import combinations
 # Configuration
 PORT_IMAGE = 1234
 PORT_SYNC = 7777
-YOLO_MODEL_PATH = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/YOLO/last_11m.pt" #"yolov8_depth/pt/0528_jh_yolov8m_l.pt"
+YOLO_MODEL_PATH = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/YOLO/last.pt" #"yolov8_depth/pt/0528_jh_yolov8m_l.pt"
 # BOX class ID : 1
 KEYPOINT_CLASS_ID = 1
 
