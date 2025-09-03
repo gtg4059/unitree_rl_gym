@@ -222,7 +222,7 @@ class Controller:
         gravity_orientation = get_gravity_orientation(quat)
         qj_obs = self.qj.copy()
         dqj_obs = self.dqj.copy()
-        qj_obs = (qj_obs - np.concatenate([self.config.default_angles, self.config.arm_default_angles],axis=0)) * self.config.dof_pos_scale
+        qj_obs = qj_obs * self.config.dof_pos_scale
         dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
 
@@ -236,14 +236,16 @@ class Controller:
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
-        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
+        
         # print("self.obs:",*self.obs)
         # Get the action from the policy network
-        obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
-
         if controller.remote_controller.button[KeyMap.X] == 1:
+            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
+            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
             self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         else:
+            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
+            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
             self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos

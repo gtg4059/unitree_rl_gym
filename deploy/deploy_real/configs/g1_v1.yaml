@@ -47,6 +47,6 @@ dof_vel_scale: 0.05
 action_scale: 0.25
 cmd_scale: [2.0, 2.0, 0.25]
 num_actions: 29
-num_obs: 96
+num_obs: 110
 
 max_cmd: [0.8, 0.5, 1.57]
