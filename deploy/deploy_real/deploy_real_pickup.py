@@ -247,7 +247,6 @@ class Controller:
         
         # transform action to target_dof_pos
         target_dof_pos = self.action * self.config.action_scale #29
-        # print("target_dof_pos:",*target_dof_pos)
 
         # Build low cmd
         for i in range(len(self.config.leg_joint2motor_idx)):
