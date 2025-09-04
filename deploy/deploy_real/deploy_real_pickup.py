@@ -258,7 +258,7 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
-        # print("arm_waist_joint2motor_idx")
+
         for i in range(len(self.config.arm_waist_joint2motor_idx)):
             # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
             motor_idx = self.config.arm_waist_joint2motor_idx[i]
