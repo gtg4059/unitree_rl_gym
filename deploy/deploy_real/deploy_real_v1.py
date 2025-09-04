@@ -230,6 +230,10 @@ class Controller:
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
 
+        for i in range(len(self.cmd)):
+            if abs(self.cmd[i]) < 0.1:
+                self.cmd[i] = 0
+
         num_actions = self.config.num_actions
         self.obs[:3] = ang_vel
         self.obs[3:6] = gravity_orientation
