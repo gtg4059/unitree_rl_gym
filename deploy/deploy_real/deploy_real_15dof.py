@@ -35,6 +35,7 @@ class Controller:
         self.policy_run = torch.jit.load(config.policy_run)
         self.policy_stop = torch.jit.load(config.policy_stop)
         # Initializing process variables
+        config.num_actions = 15
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
         self.action = np.zeros(config.num_actions, dtype=np.float32)
@@ -203,7 +204,7 @@ class Controller:
         for i in range(len(self.config.leg_joint2motor_idx)):
             self.qj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].q
             self.dqj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].dq
-        for i in range(len(self.config.arm_waist_joint2motor_idx)):
+        for i in range(3):
             self.qj[i+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].q
             self.dqj[i+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].dq
 
@@ -230,26 +231,19 @@ class Controller:
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
 
-        num_actions = self.config.num_actions
+        num_actions = 15
         self.obs[:3] = ang_vel
         self.obs[3:6] = gravity_orientation
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
-        
-        # print("self.obs:",*self.obs)
-        # Get the action from the policy network
-        if controller.remote_controller.button[KeyMap.X] == 1:
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        else:
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-            self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
+        obs_tensor = torch.from_numpy(self.obs[:54]).unsqueeze(0)
+        # print("obs_tensor:",obs_tensor)
+        self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
-        target_dof_pos = self.action * self.config.action_scale #29
+        target_dof_pos = np.concatenate([self.config.default_angles, self.config.arm_default_angles[:3]], axis=0) + self.action * self.config.action_scale #29
         # target_dof_pos = self.action * self.config.action_scale #29
         # print("target_dof_pos:",*target_dof_pos)
 
@@ -257,6 +251,7 @@ class Controller:
         # print("leg_joint2motor_idx")
         for i in range(len(self.config.leg_joint2motor_idx)):
             # print(target_dof_pos[i],sep=',',end='')
+            # print("legs:",np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i]))
             motor_idx = self.config.leg_joint2motor_idx[i]
             self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
             self.low_cmd.motor_cmd[motor_idx].qd = 0
@@ -264,15 +259,25 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
         # print("arm_waist_joint2motor_idx")
-        for i in range(len(self.config.arm_waist_joint2motor_idx)):
-            # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+        for i in range(3):
+            # print("waist:",np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],self.config.arm_waist_limits_high[i]))
             motor_idx = self.config.arm_waist_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-                                                          self.config.arm_waist_limits_high[i])
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],
+                                                          self.config.arm_waist_limits_low[i],self.config.arm_waist_limits_high[i])
             self.low_cmd.motor_cmd[motor_idx].qd = 0
             self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
+        for i in range(len(self.config.arm_waist_joint2motor_idx)-3): # 12
+            # print("arm:",self.config.arm_default_angles[i+3])
+            motor_idx = self.config.arm_waist_joint2motor_idx[i+3]
+            self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i+3]
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i+3]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i+3]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
+
+
 
             # # 데이터 수집 (매 스텝마다)
             # data_row = {}
