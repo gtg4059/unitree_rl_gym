@@ -234,43 +234,43 @@ class Controller:
         # Get the action from the policy network
         # 일단 서서 box인식하는지 확인해야 한다
         print("boxdata:",np.array([self.boxdata[0], self.boxdata[1], self.boxdata[2]],dtype=np.float32))
-        if controller.remote_controller.button[KeyMap.X] == 1 and controller.remote_controller.button[KeyMap.Y] != 1: # run
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd #3
-            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        elif controller.remote_controller.button[KeyMap.Y] == 1: # pickup
-            self.obs[6 + num_actions * 3:13 + num_actions * 3] = np.array([0.2500, 0.1400, 0.2000, 0.7071, 0.0000, -0.0000, 0.7071],dtype=np.float32) #7
-            self.obs[13 + num_actions * 3:20 + num_actions * 3] = np.array([0.2500, -0.1400,  0.2000,  0.7071, -0.0000,  0.0000, -0.7071],dtype=np.float32) #7
-            self.obs[20 + num_actions * 3:23 + num_actions * 3] = np.array([self.boxdata[0], self.boxdata[1], self.boxdata[2]],dtype=np.float32) #3
-            obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
-            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        else:
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-            self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+        # if controller.remote_controller.button[KeyMap.X] == 1 and controller.remote_controller.button[KeyMap.Y] != 1: # run
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd #3
+        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        # elif controller.remote_controller.button[KeyMap.Y] == 1: # pickup
+        #     self.obs[6 + num_actions * 3:13 + num_actions * 3] = np.array([0.2500, 0.1400, 0.2000, 0.7071, 0.0000, -0.0000, 0.7071],dtype=np.float32) #7
+        #     self.obs[13 + num_actions * 3:20 + num_actions * 3] = np.array([0.2500, -0.1400,  0.2000,  0.7071, -0.0000,  0.0000, -0.7071],dtype=np.float32) #7
+        #     self.obs[20 + num_actions * 3:23 + num_actions * 3] = np.array([self.boxdata[0], self.boxdata[1], self.boxdata[2]],dtype=np.float32) #3
+        #     obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
+        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        # else:
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
+        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
-        # transform action to target_dof_pos
-        target_dof_pos = self.action * self.config.action_scale #29
+        # # transform action to target_dof_pos
+        # target_dof_pos = self.action * self.config.action_scale #29
 
-        # Build low cmd
-        for i in range(len(self.config.leg_joint2motor_idx)):
-            # print(target_dof_pos[i],sep=',',end='')
-            motor_idx = self.config.leg_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-            self.low_cmd.motor_cmd[motor_idx].qd = 0
-            self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-            self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # # Build low cmd
+        # for i in range(len(self.config.leg_joint2motor_idx)):
+        #     # print(target_dof_pos[i],sep=',',end='')
+        #     motor_idx = self.config.leg_joint2motor_idx[i]
+        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        for i in range(len(self.config.arm_waist_joint2motor_idx)):
-            # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-            motor_idx = self.config.arm_waist_joint2motor_idx[i]
-            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-                                                          self.config.arm_waist_limits_high[i])
-            self.low_cmd.motor_cmd[motor_idx].qd = 0
-            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
+        #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
+        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
+        #                                                   self.config.arm_waist_limits_high[i])
+        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
         # if np.any(np.abs(self.dqj) > 20):
         #     print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
