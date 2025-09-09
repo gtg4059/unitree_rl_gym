@@ -3,6 +3,9 @@ from typing import Union
 import numpy as np
 import time
 import torch
+import os
+import pandas as pd
+import datetime
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
@@ -18,27 +21,20 @@ from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
 from common.remote_controller import RemoteController, KeyMap
 from config_v1 import Config
-from multiprocessing import Array, Lock, Value
+from multiprocessing import Process, shared_memory, Array
+from multiprocessing import shared_memory, Array, Lock
 from robot_control.robot_hand_inspire import Inspire_Controller
-from robot_control.YoloClientProcess import YoloClientProcess
 
-import zmq
-import struct
-import cv2
-from ultralytics import YOLO
-from ultralytics.utils.checks import check_yaml
-from ultralytics.utils import ROOT, YAML
-from threading import Thread
 
 class Controller:
     def __init__(self, config: Config) -> None:
         self.config = config
         self.remote_controller = RemoteController()
-
+        self.robot_data = []
         # Initialize the policy network
         self.policy_run = torch.jit.load(config.policy_run)
         self.policy_stop = torch.jit.load(config.policy_stop)
-        # self.policy_pickup = torch.jit.load(config.policy_pickup)
+        self.policy_pickup_walk = torch.jit.load(config.policy_pickup_walk)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -47,10 +43,8 @@ class Controller:
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
         self.cmd = np.array([0.0, 0.0, 0.0],dtype=np.float32)
         self.counter = 0
-        self.boxdata = None
-        self.YoloClient = None
+        self.start_time = None
         self.hand_ctrl = None
-
         if config.msg_type == "hg":
             # g1 and h1_2 use the hg msg type
             self.low_cmd = unitree_hg_msg_dds__LowCmd_()
@@ -89,12 +83,44 @@ class Controller:
         self.dual_hand_action_array = Array('d', 12, lock = False)  # [output] current left, right hand action(12) data.
         self.hand_ctrl = None
 
+
         # Initialize the command msg
         if config.msg_type == "hg":
             init_cmd_hg(self.low_cmd, self.mode_machine_, self.mode_pr_)
         elif config.msg_type == "go":
             init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)
 
+    def save_data_to_csv(self, filename=None):
+        """
+        수집된 로봇 데이터를 CSV 파일로 저장
+        """
+        if not self.robot_data:
+            print("No data to save.")
+            return
+        
+        if filename is None:
+            # 현재 시간을 포함한 파일명 생성
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"robot_data_{timestamp}.csv"
+        
+        # DataFrame 생성
+        df = pd.DataFrame(self.robot_data)
+        # CSV 파일로 저장
+        df.to_csv(filename, index=False)
+        
+        # action 통계 (처음 5개 관절)
+        print("Action (first 5 joints):")
+        for j in range(min(5, 23)):
+            col = f'action_{j}'
+            if col in df.columns:
+                mean_val = df[col].mean()
+                std_val = df[col].std()
+                min_val = df[col].min()
+                max_val = df[col].max()
+                print(f"  joint_{j}: mean={mean_val:.6f}, std={std_val:.6f}, range=[{min_val:.6f}, {max_val:.6f}]")
+        
+        return filename
+    
     def LowStateHgHandler(self, msg: LowStateHG):
         self.low_state = msg
         self.mode_machine_ = self.low_state.mode_machine
@@ -123,6 +149,10 @@ class Controller:
 
     def move_to_default_pos(self):
         print("Moving to default pos.")
+        # pos
+        self.left_hand_array[:] = np.array([1000,1000,1000,1000,0,1000], dtype=np.float32)
+        self.right_hand_array[:] = np.array([1000,1000,1000,1000,0,1000], dtype=np.float32)
+        self.hand_ctrl = Inspire_Controller(self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
         # move time 2s
         total_time = 2
         num_step = int(total_time / self.config.control_dt)
@@ -141,53 +171,41 @@ class Controller:
         # move to default pos
         for i in range(num_step):
             alpha = i / num_step
-            # for j in range(dof_size):
-            #     motor_idx = dof_idx[j]
-            #     target_pos = default_pos[j]
-            #     self.low_cmd.motor_cmd[motor_idx].q = init_dof_pos[j] * (1 - alpha) + target_pos * alpha
-            #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-            #     self.low_cmd.motor_cmd[motor_idx].kp = kps[j]
-            #     self.low_cmd.motor_cmd[motor_idx].kd = kds[j]
-            #     self.low_cmd.motor_cmd[motor_idx].tau = 0
-            # self.send_cmd(self.low_cmd)
+            for j in range(dof_size):
+                motor_idx = dof_idx[j]
+                target_pos = default_pos[j]
+                self.low_cmd.motor_cmd[motor_idx].q = init_dof_pos[j] * (1 - alpha) + target_pos * alpha
+                self.low_cmd.motor_cmd[motor_idx].qd = 0
+                self.low_cmd.motor_cmd[motor_idx].kp = kps[j]
+                self.low_cmd.motor_cmd[motor_idx].kd = kds[j]
+                self.low_cmd.motor_cmd[motor_idx].tau = 0
+            self.send_cmd(self.low_cmd)
             time.sleep(self.config.control_dt)
 
     def default_pos_state(self):
         print("Enter default pos state.")
         print("Waiting for the Button A signal...")
-        # # force test
-        # self.mode = 0b0100
-        # self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
-        # self.right_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
-        
-        # pos
-        self.left_hand_array[:] = np.array([700,700,700,700,700,700], dtype=np.float32)
-        self.right_hand_array[:] = np.array([700,700,700,700,700,700], dtype=np.float32)
 
-        self.hand_ctrl = Inspire_Controller(self.left_hand_array, self.right_hand_array, self.dual_hand_data_lock, self.dual_hand_state_array, self.dual_hand_action_array)
-        self.boxdata = Array('d', 3, lock = False)
-        self.YoloClient = YoloClientProcess(self.boxdata,server_ip="192.168.123.164")
-        print("YoloClientProcess started")
-        # while self.remote_controller.button[KeyMap.A] != 1:
-        #     for i in range(len(self.config.leg_joint2motor_idx)):
-        #         motor_idx = self.config.leg_joint2motor_idx[i]
-        #         self.low_cmd.motor_cmd[motor_idx].q = self.config.default_angles[i]
-        #         self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #         self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-        #         self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-        #         self.low_cmd.motor_cmd[motor_idx].tau = 0
-        #     for i in range(len(self.config.arm_waist_joint2motor_idx)):
-        #         motor_idx = self.config.arm_waist_joint2motor_idx[i]
-        #         self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i]
-        #         self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #         self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-        #         self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-        #         self.low_cmd.motor_cmd[motor_idx].tau = 0
-        #     self.send_cmd(self.low_cmd)
-        #     time.sleep(self.config.control_dt)
+        
+        while self.remote_controller.button[KeyMap.A] != 1:
+            for i in range(len(self.config.leg_joint2motor_idx)):
+                motor_idx = self.config.leg_joint2motor_idx[i]
+                self.low_cmd.motor_cmd[motor_idx].q = self.config.default_angles[i]
+                self.low_cmd.motor_cmd[motor_idx].qd = 0
+                self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+                self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+                self.low_cmd.motor_cmd[motor_idx].tau = 0
+            for i in range(len(self.config.arm_waist_joint2motor_idx)):
+                motor_idx = self.config.arm_waist_joint2motor_idx[i]
+                self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i]
+                self.low_cmd.motor_cmd[motor_idx].qd = 0
+                self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+                self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+                self.low_cmd.motor_cmd[motor_idx].tau = 0
+            self.send_cmd(self.low_cmd)
+            time.sleep(self.config.control_dt)
 
     def run(self):
-        # while True:
         self.counter += 1
         # Get the current joint position and velocity
         for i in range(len(self.config.leg_joint2motor_idx)):
@@ -212,7 +230,7 @@ class Controller:
         gravity_orientation = get_gravity_orientation(quat)
         qj_obs = self.qj.copy()
         dqj_obs = self.dqj.copy()
-        qj_obs = (qj_obs - np.concatenate([self.config.default_angles, self.config.arm_default_angles],axis=0)) * self.config.dof_pos_scale
+        qj_obs = qj_obs * self.config.dof_pos_scale
         dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
 
@@ -230,64 +248,88 @@ class Controller:
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
-        # print("self.obs:",*self.obs)
-        # Get the action from the policy network
-        # 일단 서서 box인식하는지 확인해야 한다
-        print("boxdata:",np.array([self.boxdata[0], self.boxdata[1], self.boxdata[2]],dtype=np.float32))
-        # if controller.remote_controller.button[KeyMap.X] == 1 and controller.remote_controller.button[KeyMap.Y] != 1: # run
-        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd #3
+        
+        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
+        # if controller.remote_controller.button[KeyMap.X] == 1:
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
         #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        # elif controller.remote_controller.button[KeyMap.Y] == 1: # pickup
-        #     self.obs[6 + num_actions * 3:13 + num_actions * 3] = np.array([0.2500, 0.1400, 0.2000, 0.7071, 0.0000, -0.0000, 0.7071],dtype=np.float32) #7
-        #     self.obs[13 + num_actions * 3:20 + num_actions * 3] = np.array([0.2500, -0.1400,  0.2000,  0.7071, -0.0000,  0.0000, -0.7071],dtype=np.float32) #7
-        #     self.obs[20 + num_actions * 3:23 + num_actions * 3] = np.array([self.boxdata[0], self.boxdata[1], self.boxdata[2]],dtype=np.float32) #3
-        #     obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
         #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         # else:
         #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
         #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
         #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
-        
-        # # transform action to target_dof_pos
+            
+        # 여기에 left_ee_pos_command + right ee pose command 들어가면 될 것 같음.
+        # left_ee_pose_command (7) - pos(3) + quat(4)
+        # left_ee_pos = [0.34, 0.14, 0.15]  # velocity_env_cfg.py에서 정의된 값
+        left_ee_pos = [0.32, 0.16, 0.15]
+        left_ee_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        self.obs[9 + num_actions * 3:16 + num_actions * 3] = np.concatenate([left_ee_pos, left_ee_quat])
+
+        # right_ee_pose_command (7) - pos(3) + quat(4)
+        # right_ee_pos = [0.34, -0.14, 0.15]  # velocity_env_cfg.py에서 정의된 값
+        right_ee_pos = [0.32, -0.16, 0.15]
+        right_ee_quat = [-0.707, 0.0, 0.0, 0.707]  # yaw=-π/2에 해당하는 quaternion
+        self.obs[16 + num_actions * 3:23 + num_actions * 3] = np.concatenate([right_ee_pos, right_ee_quat])
+
+        obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
+        self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
+        # transform action to target_dof_pos
+        target_dof_pos = self.action * self.config.action_scale #29
         # target_dof_pos = self.action * self.config.action_scale #29
+        # print("target_dof_pos:",*target_dof_pos)
+        
 
-        # # Build low cmd
-        # for i in range(len(self.config.leg_joint2motor_idx)):
-        #     # print(target_dof_pos[i],sep=',',end='')
-        #     motor_idx = self.config.leg_joint2motor_idx[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # Build low cmd
+        for i in range(len(self.config.leg_joint2motor_idx)):
+            motor_idx = self.config.leg_joint2motor_idx[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        for i in range(len(self.config.arm_waist_joint2motor_idx)):
+            # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+            motor_idx = self.config.arm_waist_joint2motor_idx[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
+                                                          self.config.arm_waist_limits_high[i])
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
-        #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-        #                                                   self.config.arm_waist_limits_high[i])
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+            # # 데이터 수집 (매 스텝마다)
+        data_row = {}
+        
+        # # 액션과 목표 위치 추가
+        for i in range(len(self.action)):
+            data_row[f'action_{i}'] = float(self.action[i])
+            data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
+            data_row[f'qj{i}'] = float(self.qj[i])
+            data_row[f'dqj{i}'] = float(self.dqj[i])
+            
+        
+        self.robot_data.append(data_row)
 
-        # if np.any(np.abs(self.dqj) > 20):
-        #     print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
-        #     print(f"Terminating robot control for safety.")
-        #     # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
-        #     create_damping_cmd(self.low_cmd)
-        #     self.send_cmd(self.low_cmd)
-        #     time.sleep(0.1) # 명령 전송 후 잠시 대기
-        #     raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
+        if np.any(np.abs(self.dqj) > 20):
+            print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
+            print(f"Terminating robot control for safety.")
+            # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
+            create_damping_cmd(self.low_cmd)
+            self.send_cmd(self.low_cmd)
+            time.sleep(0.1) # 명령 전송 후 잠시 대기
+            raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
 
-        # # send the command
-        # self.send_cmd(self.low_cmd)
+        # send the command
+        self.send_cmd(self.low_cmd)
 
         time.sleep(self.config.control_dt)
 
+
+
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("net", type=str, help="network interface")
     parser.add_argument("config", type=str, help="config file name in the configs folder", default="g1.yaml")
@@ -322,4 +364,9 @@ if __name__ == "__main__":
     # Enter the damping state
     create_damping_cmd(controller.low_cmd)
     controller.send_cmd(controller.low_cmd)
+
+    print("Saving robot data...")
+    csv_filename = controller.save_data_to_csv()
+    print(f"Data saved to: {csv_filename}")
+
     print("Exit")
