@@ -331,13 +331,7 @@ def dummy_image():
 
 class YoloClientProcess:
     def __init__(self, boxdata, server_ip="127.0.0.1",):
-        # box_center_3d = box_center_3d
         self.server_ip = server_ip
-        # self.left_hand_array = Array('d', 6, lock=True)
-        # self.left_hand_array[:] = np.array([100,100,100,100,100,100], dtype=np.float32)
-        self.boxdata = Array('d', 3, lock=True)
-        # self.box_center_3d = np.array([0, 0, 0],dtype=np.float32)  # 박스 중심점 초기화
-
         client_process = Process(target=self.run_client, args=(boxdata,))
         client_process.daemon = True
         client_process.start()
