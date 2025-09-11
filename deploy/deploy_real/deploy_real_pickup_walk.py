@@ -261,14 +261,14 @@ class Controller:
             
         # 여기에 left_ee_pos_command + right ee pose command 들어가면 될 것 같음.
         # left_ee_pose_command (7) - pos(3) + quat(4)
-        # left_ee_pos = [0.34, 0.14, 0.15]  # velocity_env_cfg.py에서 정의된 값
-        left_ee_pos = [0.32, 0.16, 0.15]
+        left_ee_pos = [0.34, 0.14, 0.15]  # velocity_env_cfg.py에서 정의된 값
+        # left_ee_pos = [0.32, 0.16, 0.15]
         left_ee_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
         self.obs[9 + num_actions * 3:16 + num_actions * 3] = np.concatenate([left_ee_pos, left_ee_quat])
 
         # right_ee_pose_command (7) - pos(3) + quat(4)
-        # right_ee_pos = [0.34, -0.14, 0.15]  # velocity_env_cfg.py에서 정의된 값
-        right_ee_pos = [0.32, -0.16, 0.15]
+        right_ee_pos = [0.34, -0.14, 0.15]  # velocity_env_cfg.py에서 정의된 값
+        # right_ee_pos = [0.32, -0.16, 0.15]
         right_ee_quat = [-0.707, 0.0, 0.0, 0.707]  # yaw=-π/2에 해당하는 quaternion
         self.obs[16 + num_actions * 3:23 + num_actions * 3] = np.concatenate([right_ee_pos, right_ee_quat])
 
