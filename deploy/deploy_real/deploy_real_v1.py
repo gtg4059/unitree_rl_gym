@@ -284,7 +284,7 @@ class Controller:
         # 액션과 목표 위치 추가
         for i in range(len(self.action)):
             data_row[f'action_{i}'] = float(self.action[i])
-            data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
+            # data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
             
         # # obs 위치 추가
         # for i in range(len(self.obs)):
