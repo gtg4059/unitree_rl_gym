@@ -307,7 +307,8 @@ class Controller:
 
         elapsed = time.time() - start_time
         print(elapsed)
-        time.sleep(self.config.control_dt-elapsed)
+        if elapsed < self.config.control_dt:
+            time.sleep(self.config.control_dt-elapsed)
 
 
 
