@@ -199,6 +199,7 @@ class Controller:
 
     def run(self):
         self.counter += 1
+        start_time = time.time()
         # Get the current joint position and velocity
         for i in range(len(self.config.leg_joint2motor_idx)):
             self.qj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].q
@@ -278,19 +279,19 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        # 데이터 수집 (매 스텝마다)
-        data_row = {}
+        # # 데이터 수집 (매 스텝마다)
+        # data_row = {}
         
-        # 액션과 목표 위치 추가
-        for i in range(len(self.action)):
-            data_row[f'action_{i}'] = float(self.action[i])
-            # data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
+        # # 액션과 목표 위치 추가
+        # for i in range(len(self.action)):
+        #     data_row[f'action_{i}'] = float(self.action[i])
+        #     # data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
             
-        # # obs 위치 추가
-        # for i in range(len(self.obs)):
-        #     data_row[f'obs_{i}'] = float(self.obs[i])
+        # # # obs 위치 추가
+        # # for i in range(len(self.obs)):
+        # #     data_row[f'obs_{i}'] = float(self.obs[i])
         
-        self.robot_data.append(data_row)
+        # self.robot_data.append(data_row)
 
         if np.any(np.abs(self.dqj) > 20):
             print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
@@ -304,7 +305,9 @@ class Controller:
         # send the command
         self.send_cmd(self.low_cmd)
 
-        time.sleep(self.config.control_dt)
+        elapsed = time.time() - start_time
+        print(elapsed)
+        time.sleep(self.config.control_dt-elapsed)
 
 
 
