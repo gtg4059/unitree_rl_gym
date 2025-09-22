@@ -35,7 +35,7 @@ class Controller:
         self.policy_run = torch.jit.load(config.policy_run)
         self.policy_stop = torch.jit.load(config.policy_stop)
         # Initializing process variables
-        config.num_actions = 13
+        config.num_actions = 15
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
         self.action = np.zeros(config.num_actions, dtype=np.float32)
@@ -204,7 +204,7 @@ class Controller:
         for i in range(len(self.config.leg_joint2motor_idx)):
             self.qj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].q
             self.dqj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].dq
-        for i in range(1):
+        for i in range(3):
             self.qj[i+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].q
             self.dqj[i+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].dq
 
@@ -231,14 +231,14 @@ class Controller:
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
 
-        num_actions = 13
+        num_actions = 15
         self.obs[:3] = ang_vel
         self.obs[3:6] = gravity_orientation
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
-        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
-        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-        obs_tensor = torch.from_numpy(self.obs[:48]).unsqueeze(0)
+        self.obs[6 + num_actions * 2 : 4 + num_actions * 3] = self.action
+        self.obs[4 + num_actions * 3:7 + num_actions * 3] = self.cmd * 0
+        obs_tensor = torch.from_numpy(self.obs[:52]).unsqueeze(0)
         # print("obs_tensor:",obs_tensor)
         self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
