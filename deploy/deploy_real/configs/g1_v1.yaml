@@ -8,10 +8,10 @@ lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
 policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_run.pt"
 # policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop.pt"
-policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_13dof.pt"
+policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop15.pt"
 policy_pickup: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_pickup.pt"
 # policy_pickup_walk: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_pickup_walk.pt"
-policy_pickup_walk: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_jihyun_walk.pt"
+policy_pickup_walk: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_boxwalk_ys_0918.pt"
 
 leg_joint2motor_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 kps: [100, 100, 100, 150, 40, 40, 100, 100, 100, 150, 40, 40]
@@ -44,14 +44,17 @@ arm_waist_limits_low: [-2.618,-0.52,-0.52,
 arm_waist_limits_high: [2.618,0.52,0.52,
                         2.6704,2.2515,2.618,2.0944,1.972222054,1.614429558,1.614429558,
                         2.6704,1.5882,2.618,2.0944,1.972222054,1.614429558,1.614429558]
-arm_default_angles: [0, 0, 0,
-                    0.0, 0.1, 0.1, 0.0, -0.2, 0, 0,
-                    0.0, -0.1, -0.1, 0.0, 0.2, 0, 0,]
+# arm_default_angles: [0, 0, 0,
+#                     0.0, 0.1, 0.1, 0.0, -0.2, 0, 0,
+#                     0.0, -0.1, -0.1, 0.0, 0.2, 0, 0,]
+arm_default_angles: [ 0, 0, 0,
+                    0, 0.2, 0.1, 1.5708, 0, 0, 0,
+                    0, -0.2, -0.1, 1.5708, 0, 0, 0]
 
-# for pickup walk
-# arm_default_angles: [-0.0342, 0.0008, 0.0306,
-#                    -0.0398,  0.1407, -0.2351,  0.0941,  -0.2807, -0.2176,  0.2677,
-#                     -0.0687, -0.1435, 0.1259,0.2331, 0.5135, -0.4658, 0.0177]
+# for pickup walk - ys 0918
+# arm_default_angles: [0, 0, 0.0,
+#                    0.0,  0.2, 0.1,  -0.1,  -0.1, 0.4,  0.2,
+#                    0.0, -0.2, -0.1, -0.1, 0.1, 0.4, -0.2]
 
 
 ang_vel_scale: 0.25
