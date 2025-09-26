@@ -233,20 +233,23 @@ class Controller:
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
 
-        num_actions = 15
+        for i in range(len(self.cmd)):
+            if abs(self.cmd[i]) < 0.08:
+                self.cmd[i] = 0
+
         num_actions = 15
         self.obs[:3] = ang_vel
         self.obs[3:6] = gravity_orientation
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
-        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
+        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd
         obs_tensor = torch.from_numpy(self.obs[:54]).unsqueeze(0)
         # print("obs_tensor:",obs_tensor)
-        self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+        self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
-        target_dof_pos = np.concatenate([self.config.default_angles, self.config.arm_default_angles[:3]], axis=0) + self.action * self.config.action_scale #13
+        target_dof_pos = self.action * self.config.action_scale #13
         # target_dof_pos = self.action * self.config.action_scale #29
         # print("target_dof_pos:",*target_dof_pos)
 
@@ -292,7 +295,7 @@ class Controller:
             
             # self.robot_data.append(data_row)
 
-        if np.any(np.abs(self.dqj) > 10):
+        if np.any(np.abs(self.dqj) > 18):
             print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
             print(f"Terminating robot control for safety.")
             # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송

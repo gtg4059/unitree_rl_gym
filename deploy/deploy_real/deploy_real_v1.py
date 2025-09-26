@@ -232,7 +232,7 @@ class Controller:
         self.cmd[2] = self.remote_controller.rx * -1
 
         for i in range(len(self.cmd)):
-            if abs(self.cmd[i]) < 0.1:
+            if abs(self.cmd[i]) < 0.08:
                 self.cmd[i] = 0
 
         num_actions = self.config.num_actions
@@ -242,16 +242,20 @@ class Controller:
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
         
-        # print("self.obs:",*self.obs)
+        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
+        obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
         # Get the action from the policy network
-        if controller.remote_controller.button[KeyMap.X] == 1:
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        else:
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-            obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-            self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+        
+
+        # if controller.remote_controller.button[KeyMap.X] == 1:
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
+        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        # else:
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
+        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
         target_dof_pos = self.action * self.config.action_scale #29
@@ -293,7 +297,7 @@ class Controller:
         
         # self.robot_data.append(data_row)
 
-        if np.any(np.abs(self.dqj) > 16):
+        if np.any(np.abs(self.dqj) > 18):
             print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
             print(f"Terminating robot control for safety.")
             # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
@@ -304,11 +308,15 @@ class Controller:
 
         # send the command
         self.send_cmd(self.low_cmd)
-
         elapsed = time.time() - start_time
+
         # print(elapsed)
         if elapsed < self.config.control_dt:
             time.sleep(self.config.control_dt-elapsed)
+
+        if elapsed > 0.02:
+            print("pass")
+            pass
 
 
 
