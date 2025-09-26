@@ -234,13 +234,14 @@ class Controller:
         self.cmd[2] = self.remote_controller.rx * -1
 
         num_actions = 15
+        num_actions = 15
         self.obs[:3] = ang_vel
         self.obs[3:6] = gravity_orientation
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-        obs_tensor = torch.from_numpy(self.obs[:48]).unsqueeze(0)
+        obs_tensor = torch.from_numpy(self.obs[:54]).unsqueeze(0)
         # print("obs_tensor:",obs_tensor)
         self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         

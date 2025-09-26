@@ -293,7 +293,7 @@ class Controller:
         
         # self.robot_data.append(data_row)
 
-        if np.any(np.abs(self.dqj) > 20):
+        if np.any(np.abs(self.dqj) > 16):
             print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
             print(f"Terminating robot control for safety.")
             # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
@@ -306,7 +306,7 @@ class Controller:
         self.send_cmd(self.low_cmd)
 
         elapsed = time.time() - start_time
-        print(elapsed)
+        # print(elapsed)
         if elapsed < self.config.control_dt:
             time.sleep(self.config.control_dt-elapsed)
 
