@@ -36,6 +36,7 @@ class Controller:
         self.policy_stop = torch.jit.load(config.policy_stop)
         # Initializing process variables
         config.num_actions = 15
+        config.num_actions = 15
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
         self.action = np.zeros(config.num_actions, dtype=np.float32)
@@ -239,7 +240,7 @@ class Controller:
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-        obs_tensor = torch.from_numpy(self.obs[:54]).unsqueeze(0)
+        obs_tensor = torch.from_numpy(self.obs[:48]).unsqueeze(0)
         # print("obs_tensor:",obs_tensor)
         self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
