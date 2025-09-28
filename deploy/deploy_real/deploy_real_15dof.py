@@ -243,10 +243,15 @@ class Controller:
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
-        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd
-        obs_tensor = torch.from_numpy(self.obs[:54]).unsqueeze(0)
-        # print("obs_tensor:",obs_tensor)
-        self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+
+        if controller.remote_controller.button[KeyMap.X] == 1:
+            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
+            obs_tensor = torch.from_numpy(self.obs[:54]).unsqueeze(0)
+            self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        else:
+            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
+            obs_tensor = torch.from_numpy(self.obs[:54]).unsqueeze(0)
+            self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
         target_dof_pos = self.action * self.config.action_scale #13

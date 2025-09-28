@@ -6,10 +6,12 @@ imu_type: "pelvis"    # "torso" or "pelvis"
 
 lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
-policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_run15.pt" # arm down sg
+policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_run.pt" # arm down sg
 # policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy-0926.pt" # arm down jh
-policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop.pt"
-# policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_ys_stand_0924.pt"
+# policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop_0927.pt"
+# policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop.pt" #
+policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop_ys2.pt"
+
 policy_pickup: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_pickup.pt"
 # policy_pickup_walk: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_pickup_walk.pt"
 policy_pickup_walk: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_ys_walk_0924.pt"
@@ -50,12 +52,13 @@ arm_waist_limits_high: [2.618,0.52,0.52,
 #                     0.0, 0.1, 0.1, 0.0, -0.2, 0, 0,
 #                     0.0, -0.1, -0.1, 0.0, 0.2, 0, 0,]
 # # arm down
-# arm_default_angles: [0, 0, 0,
-#                     0.23,  0.25, 0.0, 0.9, 0, 0, 0,
-#                     0.23, -0.25, 0.0, 0.9, 0, 0, 0,]
 arm_default_angles: [0, 0, 0,
-                     0.0,  0.2,  0.1, 1.5708, 0.0, 0, 0,
-                     0.0, -0.2, -0.1, 1.5708, 0.0, 0, 0,]
+                    0.23,  0.25, 0.0, 0.9, 0, 0, 0,
+                    0.23, -0.25, 0.0, 0.9, 0, 0, 0,]
+# # arm down (15dof)
+# arm_default_angles: [0, 0, 0,
+#                      0.0,  0.4,  0.1, 1.5708, 0.0, 0, 0,
+#                      0.0, -0.4, -0.1, 1.5708, 0.0, 0, 0,]
 
 # arm_default_angles: [ 0, 0, 0,
 #                     0, 0.2, 0.1, 1.5708, 0, 0, 0,
