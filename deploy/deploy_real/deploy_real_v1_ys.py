@@ -50,9 +50,10 @@ class Controller:
         self.hand_ctrl = None
         self.fusion_client = None
         self.robot_data = []
-        self.dual_ee_pos = np.array([0.32, 0.106, 0.15, 0.707, 0.0, 0.0, 0.707, 0.32, -0.106, 0.15,0.707, 0.0, 0.0, -0.707])
+        # self.dual_ee_pos = np.array([0.23, 0.11, 0.15, 0.0, 0.0, 0.0, 0.0, 0.23, -0.11, 0.15,0.0, 0.0, 0.0, -0.0])
         self.initial_time = time.time()
         self.total_softrun_time = 3
+
         if config.msg_type == "hg":
             # g1 and h1_2 use the hg msg type
             self.low_cmd = unitree_hg_msg_dds__LowCmd_()
@@ -89,32 +90,6 @@ class Controller:
         elif config.msg_type == "go":
             init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)
 
-    def LowStateHgHandler(self, msg: LowStateHG):
-        self.low_state = msg
-        self.mode_machine_ = self.low_state.mode_machine
-        self.remote_controller.set(self.low_state.wireless_remote)
-
-    def LowStateGoHandler(self, msg: LowStateGo):
-        self.low_state = msg
-        self.remote_controller.set(self.low_state.wireless_remote)
-
-    def send_cmd(self, cmd: Union[LowCmdGo, LowCmdHG]):
-        cmd.crc = CRC().Crc(cmd)
-        self.lowcmd_publisher_.Write(cmd)
-
-    def wait_for_low_state(self):
-        while self.low_state.tick == 0:
-            time.sleep(self.config.control_dt)
-        print("Successfully connected to the robot.")
-
-    def zero_torque_state(self):
-        print("Enter zero torque state.")
-        print("Waiting for the start signal...")
-        while self.remote_controller.button[KeyMap.start] != 1:
-            create_zero_cmd(self.low_cmd)
-            self.send_cmd(self.low_cmd)
-            time.sleep(self.config.control_dt)
-
     def save_data_to_csv(self, filename=None):
         """
         수집된 로봇 데이터를 CSV 파일로 저장
@@ -145,6 +120,32 @@ class Controller:
                 print(f"  joint_{j}: mean={mean_val:.6f}, std={std_val:.6f}, range=[{min_val:.6f}, {max_val:.6f}]")
         
         return filename
+
+    def LowStateHgHandler(self, msg: LowStateHG):
+        self.low_state = msg
+        self.mode_machine_ = self.low_state.mode_machine
+        self.remote_controller.set(self.low_state.wireless_remote)
+
+    def LowStateGoHandler(self, msg: LowStateGo):
+        self.low_state = msg
+        self.remote_controller.set(self.low_state.wireless_remote)
+
+    def send_cmd(self, cmd: Union[LowCmdGo, LowCmdHG]):
+        cmd.crc = CRC().Crc(cmd)
+        self.lowcmd_publisher_.Write(cmd)
+
+    def wait_for_low_state(self):
+        while self.low_state.tick == 0:
+            time.sleep(self.config.control_dt)
+        print("Successfully connected to the robot.")
+
+    def zero_torque_state(self):
+        print("Enter zero torque state.")
+        print("Waiting for the start signal...")
+        while self.remote_controller.button[KeyMap.start] != 1:
+            create_zero_cmd(self.low_cmd)
+            self.send_cmd(self.low_cmd)
+            time.sleep(self.config.control_dt)
 
     def move_to_default_pos(self):
         print("Moving to default pos.")
@@ -185,7 +186,12 @@ class Controller:
             self.send_cmd(self.low_cmd)
             time.sleep(self.config.control_dt)
 
-        while self.remote_controller.button[KeyMap.Y] != 1:
+    def default_pos_state(self):
+        print("Enter default pos state.")
+        print("Waiting for the Button A signal...")
+
+        # while self.remote_controller.button[KeyMap.Y] != 1:
+        while self.remote_controller.button[KeyMap.A] != 1:
             for i in range(len(self.config.leg_joint2motor_idx)):
                 motor_idx = self.config.leg_joint2motor_idx[i]
                 self.low_cmd.motor_cmd[motor_idx].q = self.config.default_angles[i]
@@ -203,7 +209,8 @@ class Controller:
             self.send_cmd(self.low_cmd)
             time.sleep(self.config.control_dt)
 
-        self.softstart_stop()
+
+        # self.softstart_stop()
         # self.softstart_pickpupwalk()
 
         # while self.remote_controller.button[KeyMap.A] != 1:
@@ -253,149 +260,287 @@ class Controller:
     #             self.low_cmd.motor_cmd[motor_idx].tau = 0
     #         self.send_cmd(self.low_cmd)
     #         time.sleep(self.config.control_dt)
-    def softstart_walk(self):
-        print("Moving to default pos using policy_stop.")
-        # move time 2s
-        total_time = 2
-        stabletimestep = int(total_time / self.config.control_dt)
-        dof_idx = self.config.leg_joint2motor_idx + self.config.arm_waist_joint2motor_idx
-        kps = self.config.kps + self.config.arm_waist_kps
-        kds = self.config.kds + self.config.arm_waist_kds
-        dof_size = len(dof_idx)
-        # record the current pos
-        init_dof_pos = np.zeros(dof_size, dtype=np.float32)
-        for i in range(dof_size):
-            init_dof_pos[i] = self.low_state.motor_state[dof_idx[i]].q
-        print('test1=============')
+
+
+    # def softstart_walk(self):
+    #     print("Moving to default pos using policy_stop.")
+    #     # move time 2s
+    #     total_time = 2
+    #     stabletimestep = int(total_time / self.config.control_dt)
+    #     dof_idx = self.config.leg_joint2motor_idx + self.config.arm_waist_joint2motor_idx
+    #     kps = self.config.kps + self.config.arm_waist_kps
+    #     kds = self.config.kds + self.config.arm_waist_kds
+    #     dof_size = len(dof_idx)
+    #     # record the current pos
+    #     init_dof_pos = np.zeros(dof_size, dtype=np.float32)
+    #     for i in range(dof_size):
+    #         init_dof_pos[i] = self.low_state.motor_state[dof_idx[i]].q
+    #     print('test1=============')
 
         # DualPoseCommandCfg 학습 시 설정에 맞춰 dual pose 명령 구성
-        # 학습 시 ranges: pos_x=(0.30, 0.34), pos_y=(0.106, 0.106), pos_z=(0.13, 0.17), yaw=(π/2, π/2)
+        # 학습 시 ranges: pos_x=(0.21, 0.25), pos_y=(0.10, 0.12), pos_z=(0.08, 0.17), yaw=(0,0)
             
-        # 공통 파라미터
-        pos_x = 0.32  # 학습 시 범위의 중간값
-        pos_z = 0.15  # 학습 시 범위의 중간값
+        # # 공통 파라미터
+        # pos_x = 0.23  # 학습 시 범위의 중간값
+        # pos_z = 0.15  # 학습 시 범위의 중간값
         
-        # 왼손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
-        left_pos_y = 0.11  # 양수
-        left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
-        left_hand_pose = [pos_x, left_pos_y, pos_z] + left_quat
+        # # 왼손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
+        # left_pos_y = 0.11  # 양수
+        # # left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        # left_quat = [0.0, 0.0, 0.0, 0.0]
+        # left_hand_pose = [pos_x, left_pos_y, pos_z] + left_quat
         
-        # 오른손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
-        right_pos_y = -0.11  # 음수 (대칭)
-        right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
-        right_hand_pose = [pos_x, right_pos_y, pos_z] + right_quat
+        # # 오른손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
+        # right_pos_y = -0.11  # 음수 (대칭)
+        # # right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+        # right_quat = [0.0, 0.0, 0.0, 0.0]
+        # right_hand_pose = [pos_x, right_pos_y, pos_z] + right_quat
         
-        # 14차원으로 결합
-        self.dual_ee_pose = left_hand_pose + right_hand_pose
-        print('test2============')
-        # move to default pos using policy_stop
-        for i in range(stabletimestep):
-            start_time = time.time()
-            alpha = i / stabletimestep
+        # # 14차원으로 결합
+        # self.dual_ee_pose = left_hand_pose + right_hand_pose
+        # print('test2============')
+        # # move to default pos using policy_stop
+        # for i in range(stabletimestep):
+        #     start_time = time.time()
+        #     alpha = i / stabletimestep
             
-            # 현재 관절 위치와 속도 업데이트
-            for j in range(len(self.config.leg_joint2motor_idx)):
-                self.qj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].q
-                self.dqj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].dq
-            for j in range(len(self.config.arm_waist_joint2motor_idx)):
-                self.qj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].q
-                self.dqj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].dq
+        #     # 현재 관절 위치와 속도 업데이트
+        #     for j in range(len(self.config.leg_joint2motor_idx)):
+        #         self.qj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].q
+        #         self.dqj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].dq
+        #     for j in range(len(self.config.arm_waist_joint2motor_idx)):
+        #         self.qj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].q
+        #         self.dqj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].dq
 
-            # IMU 데이터 처리
-            quat = self.low_state.imu_state.quaternion
-            ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32)
+        #     # IMU 데이터 처리
+        #     quat = self.low_state.imu_state.quaternion
+        #     ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32)
 
-            if self.config.imu_type == "torso":
-                waist_yaw = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].q
-                waist_yaw_omega = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].dq
-                quat, ang_vel = transform_imu_data(waist_yaw=waist_yaw, waist_yaw_omega=waist_yaw_omega, imu_quat=quat, imu_omega=ang_vel)
-            print('test3=============')
-            # observation 생성
-            gravity_orientation = get_gravity_orientation(quat)
-            qj_obs = self.qj.copy()
-            dqj_obs = self.dqj.copy()
-            ang_vel = ang_vel * self.config.ang_vel_scale
+        #     if self.config.imu_type == "torso":
+        #         waist_yaw = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].q
+        #         waist_yaw_omega = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].dq
+        #         quat, ang_vel = transform_imu_data(waist_yaw=waist_yaw, waist_yaw_omega=waist_yaw_omega, imu_quat=quat, imu_omega=ang_vel)
+        #     print('test3=============')
+        #     # observation 생성
+        #     gravity_orientation = get_gravity_orientation(quat)
+        #     qj_obs = self.qj.copy()
+        #     dqj_obs = self.dqj.copy()
+        #     ang_vel = ang_vel * self.config.ang_vel_scale
 
-            num_actions = self.config.num_actions-2 # 29dof -> 27dof 허리 제거
-            self.obs[:3] = ang_vel
-            self.obs[3:6] = gravity_orientation
-            self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
-            self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
-            self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
-            self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
+        #     # num_actions = self.config.num_actions-2 # 29dof -> 27dof 허리 제거
+        #     num_actions = self.config.num_actions # 29dof
+        #     self.obs[:3] = ang_vel
+        #     self.obs[3:6] = gravity_orientation
+        #     # self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
+        #     # self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
+        #     # self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
+        #     # self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
+        #     # self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
+        #     self.obs[6 : 6 + num_actions] = qj_obs
+        #     self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
+        #     self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
+        #     self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
+
+
+        #     obs_tensor = torch.from_numpy(self.obs[:106]).unsqueeze(0)  # 106차원
+        #     self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
+        #     # self.action_27 = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+        #     # self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+
+        #     # print('test4============') 
+        #     # # action을 29차원으로 변환
+        #     # indices_to_skip = [13, 14]
+        #     # idx = 0
+        #     # for k in range(29):
+        #     #     if k in indices_to_skip:
+        #     #         continue
+        #     #     self.action[k] = self.action_27[idx]
+        #     #     idx += 1
             
-            obs_tensor = torch.from_numpy(self.obs[:104]).unsqueeze(0)  # 104차원
-            # self.action_27 = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
-            self.action_27 = self.policy_stop(obs_tensor).detach().numpy().squeeze()
-            print('test4============') 
-            # action을 29차원으로 변환
-            indices_to_skip = [13, 14]
-            idx = 0
-            for k in range(29):
-                if k in indices_to_skip:
-                    continue
-                self.action[k] = self.action_27[idx]
-                idx += 1
+        #     # action을 target_dof_pos로 변환
+        #     target_dof_pos = self.action * self.config.action_scale
             
-            # action을 target_dof_pos로 변환
-            target_dof_pos = self.action * self.config.action_scale
-            
-            # # leg 관절(앞의 12개)은 건드리지 않고, arm/waist 관절만 제어
-            # for j in range(len(self.config.leg_joint2motor_idx), dof_size):  # leg 관절 제외하고 시작
-            #     motor_idx = dof_idx[j]
-            #     start_pos = init_dof_pos[j]
-            #     policy_target = target_dof_pos[j]
-            #     interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
-            #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.arm_waist_limits_low[j-len(self.config.leg_joint2motor_idx)], 
-            #                                                  self.config.arm_waist_limits_high[j-len(self.config.leg_joint2motor_idx)])
-            #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-            #     self.low_cmd.motor_cmd[motor_idx].kp = kps[j]
-            #     self.low_cmd.motor_cmd[motor_idx].kd = kds[j]
-            #     self.low_cmd.motor_cmd[motor_idx].tau = 0
-            print('test5=============')
-            for i in range(len(self.config.leg_joint2motor_idx)):
-                # print(target_dof_pos[i],sep=',',end='')
-                motor_idx = self.config.leg_joint2motor_idx[i]
-                start_pos = init_dof_pos[i]
-                policy_target = target_dof_pos[i]
-                interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
-                self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.limits_low[i], self.config.limits_high[i])
-                # self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-                self.low_cmd.motor_cmd[motor_idx].qd = 0
-                self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-                self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-                self.low_cmd.motor_cmd[motor_idx].tau = 0
-            print('test6=============')
-            for i in range(len(self.config.arm_waist_joint2motor_idx)):
-                # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-                motor_idx = self.config.arm_waist_joint2motor_idx[i]
-                start_pos = init_dof_pos[i+len(self.config.leg_joint2motor_idx)]
-                policy_target = target_dof_pos[i+len(self.config.leg_joint2motor_idx)]
-                interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
-                self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.arm_waist_limits_low[i], self.config.arm_waist_limits_high[i])
-                self.low_cmd.motor_cmd[motor_idx].qd = 0
-                self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-                self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-                self.low_cmd.motor_cmd[motor_idx].tau = 0
-            print('test7=============')    
-
-            self.send_cmd(self.low_cmd)
-            elapsed = time.time() - start_time
-            print("elapsed:",elapsed)
-            if elapsed < self.config.control_dt:
-                time.sleep(self.config.control_dt-elapsed)
+        #     # # leg 관절(앞의 12개)은 건드리지 않고, arm/waist 관절만 제어
+        #     # for j in range(len(self.config.leg_joint2motor_idx), dof_size):  # leg 관절 제외하고 시작
+        #     #     motor_idx = dof_idx[j]
+        #     #     start_pos = init_dof_pos[j]
+        #     #     policy_target = target_dof_pos[j]
+        #     #     interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
+        #     #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.arm_waist_limits_low[j-len(self.config.leg_joint2motor_idx)], 
+        #     #                                                  self.config.arm_waist_limits_high[j-len(self.config.leg_joint2motor_idx)])
+        #     #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     #     self.low_cmd.motor_cmd[motor_idx].kp = kps[j]
+        #     #     self.low_cmd.motor_cmd[motor_idx].kd = kds[j]
+        #     #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
 
-        if np.any(np.abs(self.dqj) > 12):
-            print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
-            print(f"Terminating robot control for safety.")
-            # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
-            create_damping_cmd(self.low_cmd)
-            self.send_cmd(self.low_cmd)
-            time.sleep(0.1) # 명령 전송 후 잠시 대기
-            raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
+#             # print('test5=============')
+#             # for i in range(len(self.config.leg_joint2motor_idx)):
+#             #     # print(target_dof_pos[i],sep=',',end='')
+#             #     motor_idx = self.config.leg_joint2motor_idx[i]
+#             #     start_pos = init_dof_pos[i]
+#             #     policy_target = target_dof_pos[i]
+#             #     interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
+#             #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.limits_low[i], self.config.limits_high[i])
+#             #     # self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+#             #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+#             #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+#             #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+#             #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+#             # print('test6=============')
+#             # for i in range(len(self.config.arm_waist_joint2motor_idx)):
+#             #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+#             #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
+#             #     start_pos = init_dof_pos[i+len(self.config.leg_joint2motor_idx)]
+#             #     policy_target = target_dof_pos[i+len(self.config.leg_joint2motor_idx)]
+#             #     interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
+#             #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.arm_waist_limits_low[i], self.config.arm_waist_limits_high[i])
+#             #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+#             #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+#             #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+#             #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+#             # print('test7=============')    
+
+#             # self.send_cmd(self.low_cmd)
+#             # elapsed = time.time() - start_time
+#             # print("elapsed:",elapsed)
+#             # if elapsed < self.config.control_dt:
+#             #     time.sleep(self.config.control_dt-elapsed)
+
+
+        # if np.any(np.abs(self.dqj) > 12):
+        #     print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
+        #     print(f"Terminating robot control for safety.")
+        #     # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
+        #     create_damping_cmd(self.low_cmd)
+        #     self.send_cmd(self.low_cmd)
+        #     time.sleep(0.1) # 명령 전송 후 잠시 대기
+        #     raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
     
+    # def softstart_stop(self):
+    #     print("Moving to default pos using policy_stop.")
+    #     # move time 2s
+    #     total_time = 2
+    #     stabletimestep = int(total_time / self.config.control_dt)
+    #     dof_idx = self.config.leg_joint2motor_idx + self.config.arm_waist_joint2motor_idx
+    #     kps = self.config.kps + self.config.arm_waist_kps
+    #     kds = self.config.kds + self.config.arm_waist_kds
+    #     dof_size = len(dof_idx)
+    #     # record the current pos
+    #     init_dof_pos = np.zeros(dof_size, dtype=np.float32)
+    #     for i in range(dof_size):
+    #         init_dof_pos[i] = self.low_state.motor_state[dof_idx[i]].q
+
+    #     # DualPoseCommandCfg 학습 시 설정에 맞춰 dual pose 명령 구성
+    #     # 학습 시 ranges: pos_x=(0.30, 0.34), pos_y=(0.106, 0.106), pos_z=(0.13, 0.17), yaw=(π/2, π/2)
+            
+    #     # 공통 파라미터
+    #     pos_x = 0.23  # 학습 시 범위의 중간값
+    #     pos_z = 0.15  # 학습 시 범위의 중간값
+        
+    #     # 왼손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
+    #     left_pos_y = 0.11  # 양수
+    #     left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+    #     left_hand_pose = [pos_x, left_pos_y, pos_z] + left_quat
+        
+    #     # 오른손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
+    #     right_pos_y = -0.11  # 음수 (대칭)
+    #     right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+    #     right_hand_pose = [pos_x, right_pos_y, pos_z] + right_quat
+        
+    #     # 14차원으로 결합
+    #     self.dual_ee_pose = left_hand_pose + right_hand_pose
+    #     # move to default pos using policy_stop
+    #     for i in range(stabletimestep):
+    #         start_time = time.time()
+    #         alpha = i / stabletimestep
+            
+    #         # 현재 관절 위치와 속도 업데이트
+    #         for j in range(len(self.config.leg_joint2motor_idx)):
+    #             self.qj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].q
+    #             self.dqj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].dq
+    #         for j in range(len(self.config.arm_waist_joint2motor_idx)):
+    #             self.qj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].q
+    #             self.dqj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].dq
+
+    #         # IMU 데이터 처리
+    #         quat = self.low_state.imu_state.quaternion
+    #         ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32)
+
+    #         if self.config.imu_type == "torso":
+    #             waist_yaw = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].q
+    #             waist_yaw_omega = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].dq
+    #             quat, ang_vel = transform_imu_data(waist_yaw=waist_yaw, waist_yaw_omega=waist_yaw_omega, imu_quat=quat, imu_omega=ang_vel)
+    #         # observation 생성
+    #         gravity_orientation = get_gravity_orientation(quat)
+    #         qj_obs = self.qj.copy()
+    #         dqj_obs = self.dqj.copy()
+    #         ang_vel = ang_vel * self.config.ang_vel_scale
+
+    #         num_actions = self.config.num_actions-2 # 29dof -> 27dof 허리 제거
+    #         self.obs[:3] = ang_vel
+    #         self.obs[3:6] = gravity_orientation
+    #         self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
+    #         self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
+    #         self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
+    #         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
+    #         self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
+            
+    #         obs_tensor = torch.from_numpy(self.obs[:104]).unsqueeze(0)  # 104차원
+    #         # self.action_27 = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
+    #         self.action_27 = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+    #         # action을 29차원으로 변환
+    #         indices_to_skip = [13, 14]
+    #         idx = 0
+    #         for k in range(29):
+    #             if k in indices_to_skip:
+    #                 continue
+    #             self.action[k] = self.action_27[idx]
+    #             idx += 1
+            
+    #         # action을 target_dof_pos로 변환
+    #         target_dof_pos = self.action * self.config.action_scale
+            
+    #         for i in range(len(self.config.leg_joint2motor_idx)):
+    #             # print(target_dof_pos[i],sep=',',end='')
+    #             motor_idx = self.config.leg_joint2motor_idx[i]
+    #             start_pos = init_dof_pos[i]
+    #             policy_target = target_dof_pos[i]
+    #             interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
+    #             self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.limits_low[i], self.config.limits_high[i])
+    #             # self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+    #             self.low_cmd.motor_cmd[motor_idx].qd = 0
+    #             self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+    #             self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+    #             self.low_cmd.motor_cmd[motor_idx].tau = 0
+    #         for i in range(len(self.config.arm_waist_joint2motor_idx)):
+    #             # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+    #             motor_idx = self.config.arm_waist_joint2motor_idx[i]
+    #             start_pos = init_dof_pos[i+len(self.config.leg_joint2motor_idx)]
+    #             policy_target = target_dof_pos[i+len(self.config.leg_joint2motor_idx)]
+    #             interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
+    #             self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.arm_waist_limits_low[i], self.config.arm_waist_limits_high[i])
+    #             self.low_cmd.motor_cmd[motor_idx].qd = 0
+    #             self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+    #             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+    #             self.low_cmd.motor_cmd[motor_idx].tau = 0
+
+    #         self.send_cmd(self.low_cmd)
+    #         elapsed = time.time() - start_time
+    #         if elapsed < self.config.control_dt:
+    #             time.sleep(self.config.control_dt-elapsed)
+
+
+        # if np.any(np.abs(self.dqj) > 12):
+        #     print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
+        #     print(f"Terminating robot control for safety.")
+        #     # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
+        #     create_damping_cmd(self.low_cmd)
+        #     self.send_cmd(self.low_cmd)
+        #     time.sleep(0.1) # 명령 전송 후 잠시 대기
+        #     raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
+    """
     def softstart_pickupwalk(self):
         print("Moving to default pos using policy_stop.")
         # move time 2s
@@ -414,26 +559,29 @@ class Controller:
         # 학습 시 ranges: pos_x=(0.30, 0.34), pos_y=(0.106, 0.106), pos_z=(0.13, 0.17), yaw=(π/2, π/2)
             
         # 공통 파라미터
-        pos_x = 0.32  # 학습 시 범위의 중간값
+        pos_x = 0.23  # 학습 시 범위의 중간값
         pos_z = 0.15  # 학습 시 범위의 중간값
         
         # 왼손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
         left_pos_y = 0.11  # 양수
-        left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        # left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        left_quat = [0.0, 0.0, 0.0, 0.0]
         left_hand_pose = [pos_x, left_pos_y, pos_z] + left_quat
         
         # 오른손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
         right_pos_y = -0.11  # 음수 (대칭)
-        right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+        # right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+        right_quat = [0.0, 0.0, 0.0, 0.0]
         right_hand_pose = [pos_x, right_pos_y, pos_z] + right_quat
         
         # 14차원으로 결합
         self.dual_ee_pose = left_hand_pose + right_hand_pose
+        ######
         # move to default pos using policy_stop
         for i in range(stabletimestep):
             start_time = time.time()
             alpha = i / stabletimestep
-            
+        #######
             # 현재 관절 위치와 속도 업데이트
             for j in range(len(self.config.leg_joint2motor_idx)):
                 self.qj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].q
@@ -441,6 +589,7 @@ class Controller:
             for j in range(len(self.config.arm_waist_joint2motor_idx)):
                 self.qj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].q
                 self.dqj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].dq
+
 
             # IMU 데이터 처리
             quat = self.low_state.imu_state.quaternion
@@ -456,26 +605,32 @@ class Controller:
             dqj_obs = self.dqj.copy()
             ang_vel = ang_vel * self.config.ang_vel_scale
 
-            num_actions = self.config.num_actions-2 # 29dof -> 27dof 허리 제거
+            # num_actions = self.config.num_actions-2 # 29dof -> 27dof 허리 제거
+            num_actions = self.config.num_actions # 29dof
             self.obs[:3] = ang_vel
             self.obs[3:6] = gravity_orientation
-            self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
-            self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
-            self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
+            # self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
+            # self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
+            # self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
+            # self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
+            # self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
+            self.obs[6 : 6 + num_actions] = qj_obs
+            self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
+            self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
             self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
             self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
             
-            obs_tensor = torch.from_numpy(self.obs[:104]).unsqueeze(0)  # 104차원
+            obs_tensor = torch.from_numpy(self.obs[:110]).unsqueeze(0)  # 110차원
+            self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
             # self.action_27 = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
-            self.action_27 = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
             # action을 29차원으로 변환
-            indices_to_skip = [13, 14]
-            idx = 0
-            for k in range(29):
-                if k in indices_to_skip:
-                    continue
-                self.action[k] = self.action_27[idx]
-                idx += 1
+            # indices_to_skip = [13, 14]
+            # idx = 0
+            # for k in range(29):
+            #     if k in indices_to_skip:
+            #         continue
+            #     self.action[k] = self.action_27[idx]
+            #     idx += 1
             
             # action을 target_dof_pos로 변환
             target_dof_pos = self.action * self.config.action_scale
@@ -506,10 +661,12 @@ class Controller:
             self.send_cmd(self.low_cmd)
             time.sleep(0.1) # 명령 전송 후 잠시 대기
             raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
-        
-    def softstart_stop(self):
-        print("Moving to default pos using policy_stop.")
-        # move time 2s
+    """      
+
+    def run(self):
+        self.counter += 1
+        start_time = time.time()
+
         total_time = 2
         stabletimestep = int(total_time / self.config.control_dt)
         dof_idx = self.config.leg_joint2motor_idx + self.config.arm_waist_joint2motor_idx
@@ -525,116 +682,24 @@ class Controller:
         # 학습 시 ranges: pos_x=(0.30, 0.34), pos_y=(0.106, 0.106), pos_z=(0.13, 0.17), yaw=(π/2, π/2)
             
         # 공통 파라미터
-        pos_x = 0.32  # 학습 시 범위의 중간값
+        pos_x = 0.23  # 학습 시 범위의 중간값
         pos_z = 0.15  # 학습 시 범위의 중간값
         
         # 왼손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
         left_pos_y = 0.11  # 양수
-        left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        # left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        left_quat = [0.0, 0.0, 0.0, 0.0]
         left_hand_pose = [pos_x, left_pos_y, pos_z] + left_quat
         
         # 오른손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
         right_pos_y = -0.11  # 음수 (대칭)
-        right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+        # right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+        right_quat = [0.0, 0.0, 0.0, 0.0]
         right_hand_pose = [pos_x, right_pos_y, pos_z] + right_quat
         
         # 14차원으로 결합
         self.dual_ee_pose = left_hand_pose + right_hand_pose
-        # move to default pos using policy_stop
-        for i in range(stabletimestep):
-            start_time = time.time()
-            alpha = i / stabletimestep
-            
-            # 현재 관절 위치와 속도 업데이트
-            for j in range(len(self.config.leg_joint2motor_idx)):
-                self.qj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].q
-                self.dqj[j] = self.low_state.motor_state[self.config.leg_joint2motor_idx[j]].dq
-            for j in range(len(self.config.arm_waist_joint2motor_idx)):
-                self.qj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].q
-                self.dqj[j+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[j]].dq
 
-            # IMU 데이터 처리
-            quat = self.low_state.imu_state.quaternion
-            ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32)
-
-            if self.config.imu_type == "torso":
-                waist_yaw = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].q
-                waist_yaw_omega = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].dq
-                quat, ang_vel = transform_imu_data(waist_yaw=waist_yaw, waist_yaw_omega=waist_yaw_omega, imu_quat=quat, imu_omega=ang_vel)
-            # observation 생성
-            gravity_orientation = get_gravity_orientation(quat)
-            qj_obs = self.qj.copy()
-            dqj_obs = self.dqj.copy()
-            ang_vel = ang_vel * self.config.ang_vel_scale
-
-            num_actions = self.config.num_actions-2 # 29dof -> 27dof 허리 제거
-            self.obs[:3] = ang_vel
-            self.obs[3:6] = gravity_orientation
-            self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
-            self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
-            self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
-            self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
-            
-            obs_tensor = torch.from_numpy(self.obs[:104]).unsqueeze(0)  # 104차원
-            # self.action_27 = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
-            self.action_27 = self.policy_stop(obs_tensor).detach().numpy().squeeze()
-            # action을 29차원으로 변환
-            indices_to_skip = [13, 14]
-            idx = 0
-            for k in range(29):
-                if k in indices_to_skip:
-                    continue
-                self.action[k] = self.action_27[idx]
-                idx += 1
-            
-            # action을 target_dof_pos로 변환
-            target_dof_pos = self.action * self.config.action_scale
-            
-            for i in range(len(self.config.leg_joint2motor_idx)):
-                # print(target_dof_pos[i],sep=',',end='')
-                motor_idx = self.config.leg_joint2motor_idx[i]
-                start_pos = init_dof_pos[i]
-                policy_target = target_dof_pos[i]
-                interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
-                self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.limits_low[i], self.config.limits_high[i])
-                # self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-                self.low_cmd.motor_cmd[motor_idx].qd = 0
-                self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-                self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-                self.low_cmd.motor_cmd[motor_idx].tau = 0
-            for i in range(len(self.config.arm_waist_joint2motor_idx)):
-                # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-                motor_idx = self.config.arm_waist_joint2motor_idx[i]
-                start_pos = init_dof_pos[i+len(self.config.leg_joint2motor_idx)]
-                policy_target = target_dof_pos[i+len(self.config.leg_joint2motor_idx)]
-                interpolated_pos = start_pos * (1 - alpha) + policy_target * alpha
-                self.low_cmd.motor_cmd[motor_idx].q = np.clip(interpolated_pos, self.config.arm_waist_limits_low[i], self.config.arm_waist_limits_high[i])
-                self.low_cmd.motor_cmd[motor_idx].qd = 0
-                self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-                self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-                self.low_cmd.motor_cmd[motor_idx].tau = 0
-
-            self.send_cmd(self.low_cmd)
-            elapsed = time.time() - start_time
-            if elapsed < self.config.control_dt:
-                time.sleep(self.config.control_dt-elapsed)
-
-
-        if np.any(np.abs(self.dqj) > 12):
-            print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
-            print(f"Terminating robot control for safety.")
-            # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
-            create_damping_cmd(self.low_cmd)
-            self.send_cmd(self.low_cmd)
-            time.sleep(0.1) # 명령 전송 후 잠시 대기
-            raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
- 
-    def run(self):
-        self.counter += 1
-        start_time = time.time()
-
-        
         # Get the current joint position and velocity
         for i in range(len(self.config.leg_joint2motor_idx)):
             self.qj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].q
@@ -661,12 +726,11 @@ class Controller:
         # dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
 
-        
         # joystick command
         self.cmd[0] = self.remote_controller.ly
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
-
+        
         # # # slam command
         # # send_walk_command_data=get_walk_command_data()
         # # self.cmd[0] = send_walk_command_data[0]
@@ -677,32 +741,40 @@ class Controller:
             if abs(self.cmd[i]) < 0.03:
                 self.cmd[i] = 0
 
-        num_actions = self.config.num_actions-2 # 29dof -> 27dof 허리 제거
+        num_actions = self.config.num_actions # 29dof -> 27dof 허리 제거
         self.obs[:3] = ang_vel
         self.obs[3:6] = gravity_orientation
-        self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
-        self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
-        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
+        # self.obs[6 : 6 + num_actions] = np.delete(qj_obs, [13,14]) * self.config.dof_pos_scale
+        # self.obs[6 + num_actions : 6 + num_actions * 2] = np.delete(dqj_obs, [13,14]) * self.config.dof_vel_scale
+        # self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action_27
+        self.obs[6 : 6 + num_actions] = qj_obs
+        self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
+        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
+        self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0  # pickup_walk policy를 위해 cmd를 0으로 설정
+        self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
 
 
-        pos_x = 0.31  # 학습 시 범위의 중간값
-        pos_z = 0.1  # 학습 시 범위의 중간값
+        pos_x = 0.23  # 학습 시 범위의 중간값
+        pos_z = 0.15  # 학습 시 범위의 중간값
         roll = 0.0
         pitch = 0.0
-        yaw = 1.57  # π/2
+        yaw = 0.0
         left_pos_y = 0.11  # 양수
-        left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        # left_quat = [0.707, 0.0, 0.0, 0.707]  # yaw=π/2에 해당하는 quaternion
+        left_quat = [0.0, 0.0, 0.0, 0.0]
         left_hand_pose = [pos_x, left_pos_y, pos_z] + left_quat
         # 오른손 pose (pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z)
         right_pos_y = -0.11  # 음수 (대칭)
-        right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+        # right_quat = [0.707, 0.0, 0.0, -0.707]  # yaw=-π/2에 해당하는 quaternion
+        right_quat = [0.0, 0.0, 0.0, 0.0]
         right_hand_pose = [pos_x, right_pos_y, pos_z] + right_quat
         
         # 14차원으로 결합
         self.dual_ee_pose = left_hand_pose + right_hand_pose
         self.obs[9 + num_actions * 3:23 + num_actions * 3] = self.dual_ee_pose
 
-
+        obs_tensor = torch.from_numpy(self.obs[:110]).unsqueeze(0)  # 110차원
+        self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
         # # self.softstart_walk()
 
         # # 일단 서서 box인식하는지 확인해야 한다
@@ -799,15 +871,15 @@ class Controller:
         #     # obs_tensor = torch.from_numpy(self.obs[:90]).unsqueeze(0)
         #     self.action_27 = self.policy_stop(obs_tensor).detach().numpy().squeeze()
 
-        if self.remote_controller.button[KeyMap.X] == 1: # run
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd #3
-            obs_tensor = torch.from_numpy(self.obs[:104]).unsqueeze(0)
-            self.action_27 = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
-        else:
-            self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-            obs_tensor = torch.from_numpy(self.obs[:104]).unsqueeze(0)
-            # obs_tensor = torch.from_numpy(self.obs[:90]).unsqueeze(0)
-            self.action_27 = self.policy_stop(obs_tensor).detach().numpy().squeeze()
+        # if self.remote_controller.button[KeyMap.X] == 1: # run
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd #3
+        #     obs_tensor = torch.from_numpy(self.obs[:110]).unsqueeze(0)
+        #     self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
+        # else:
+        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
+        #     obs_tensor = torch.from_numpy(self.obs[:110]).unsqueeze(0)
+        #     # obs_tensor = torch.from_numpy(self.obs[:90]).unsqueeze(0)
+        #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
 
         ## Test
         # self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd #3
@@ -848,13 +920,13 @@ class Controller:
         #     obs_tensor = torch.from_numpy(self.obs[:90]).unsqueeze(0)
         #     self.action_27 = self.policy_stop(obs_tensor).detach().numpy().squeeze()
 
-        indices_to_skip = [13, 14]
-        idx = 0
-        for i in range(29):
-            if i in indices_to_skip:
-                continue
-            self.action[i] = self.action_27[idx]
-            idx += 1
+        # indices_to_skip = [13, 14]
+        # idx = 0
+        # for i in range(29):
+        #     if i in indices_to_skip:
+        #         continue
+        #     self.action[i] = self.action_27[idx]
+        #     idx += 1
 
         # transform action to target_dof_pos
         target_dof_pos = self.action * self.config.action_scale #29
@@ -934,7 +1006,7 @@ if __name__ == "__main__":
     controller.move_to_default_pos()
 
     # Enter the default position state, press the A key to continue executing
-    # controller.default_pos_state()
+    controller.default_pos_state()
 
     while True:
         try:

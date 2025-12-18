@@ -227,7 +227,7 @@ class Controller:
         dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
         if self.remote_controller.ly >0:
-            self.cmd[0] = self.remote_controller.ly*1
+            self.cmd[0] = self.remote_controller.ly*2
         else:
             self.cmd[0] = self.remote_controller.ly
         # self.cmd[0] = self.remote_controller.ly
@@ -249,7 +249,7 @@ class Controller:
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
         obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
         # obs_tensor = torch.from_numpy(self.obs[:113]).unsqueeze(0)
-        self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
 
         # if controller.remote_controller.button[KeyMap.X] == 1:
         #     print("cmd:", self.cmd)
@@ -287,26 +287,26 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        # # 데이터 수집 (매 스텝마다)
-        # data_row = {}
+        # 데이터 수집 (매 스텝마다)
+        data_row = {}
         
-        # # 액션과 목표 위치 추가
-        # for i in range(len(self.action)):
-        #     data_row[f'action_{i}'] = float(self.action[i])
-        #     data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
-        #     data_row[f'qj{i}'] = float(self.qj[i])
-        #     data_row[f'dqj{i}'] = float(self.dqj[i])
+        # 액션과 목표 위치 추가
+        for i in range(len(self.action)):
+            data_row[f'action_{i}'] = float(self.action[i])
+            data_row[f'target_dof_pos_{i}'] = float(target_dof_pos[i])
+            data_row[f'qj{i}'] = float(self.qj[i])
+            data_row[f'dqj{i}'] = float(self.dqj[i])
         
-        # self.robot_data.append(data_row)
+        self.robot_data.append(data_row)
 
-        # if np.any(np.abs(self.dqj) > 18):
-        #     print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
-        #     print(f"Terminating robot control for safety.")
-        #     # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
-        #     create_damping_cmd(self.low_cmd)
-        #     self.send_cmd(self.low_cmd)
-        #     time.sleep(0.1) # 명령 전송 후 잠시 대기
-        #     raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
+        if np.any(np.abs(self.dqj) > 18):
+            print(f"\n[ERROR] Motor velocity limit exceeded! Max velocity: {np.max(np.abs(self.dqj)):.2f} rad/s")
+            print(f"Terminating robot control for safety.")
+            # 비상 종료를 위해 댐핑 모드 또는 토크 0 명령 전송
+            create_damping_cmd(self.low_cmd)
+            self.send_cmd(self.low_cmd)
+            time.sleep(0.1) # 명령 전송 후 잠시 대기
+            raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
 
         # send the command
         self.send_cmd(self.low_cmd)

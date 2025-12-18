@@ -229,22 +229,25 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
+    print("!")
     parser.add_argument("net", type=str, help="network interface")
     parser.add_argument("config", type=str, help="config file name in the configs folder", default="g1.yaml")
     args = parser.parse_args()
+    print("!")
 
     # Load config
     config_path = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/configs/{args.config}"
+    print("!")
     config = Config(config_path)
-
+    print("!")
     # Initialize DDS communication
     ChannelFactoryInitialize(0, args.net)
-
+    print("!")
     controller = Controller(config)
-
+    print("!")
     # Enter the zero torque state, press the start key to continue executing
     controller.zero_torque_state()
-
+    print("!")
     # Move to the default position
     controller.move_to_default_pos()
 
