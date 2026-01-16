@@ -183,6 +183,33 @@ class TrtPolicyRunner:
         # actions만 리턴 (1D)
         return self.h_actions.squeeze()
     
+    def __del__(self):
+        """pycuda로 할당한 GPU 리소스 정리."""
+        try:
+            # 스트림
+            if hasattr(self, "stream") and self.stream is not None:
+                self.stream.synchronize()
+                self.stream = None
+
+            # 디바이스 메모리들
+            for name in [
+                "d_obs", "d_h_in", "d_c_in",
+                "d_actions", "d_h_out", "d_c_out",
+            ]:
+                buf = getattr(self, name, None)
+                if buf is not None:
+                    buf.free()
+                    setattr(self, name, None)
+
+            # TensorRT 객체들 (Python 객체만 끊어 주면 됨)
+            if hasattr(self, "context"):
+                self.context = None
+            if hasattr(self, "engine"):
+                self.engine = None
+
+        except Exception:
+            # 소멸자에서 예외가 올라가지 않게 방어
+            pass
 
 if __name__ == "__main__":
     onnx_path = "/home/unitree/unitree_rl_gym/deploy/deploy_real/policy/g1/exported/policies/policy.onnx"
