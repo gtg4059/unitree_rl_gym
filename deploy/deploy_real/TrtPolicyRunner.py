@@ -3,6 +3,7 @@ from pathlib import Path
 import pycuda.driver as cuda
 import pycuda.autoinit
 import numpy as np
+import time
 
 def build_engine_from_onnx(
     onnx_path: str,
@@ -98,6 +99,9 @@ class TrtPolicyRunner:
         # 4) 입력 shape 설정
         #    obs: (1, 96) 고정, h/c: (num_layers, 1, hidden_size) 고정이라고 가정
         self.obs_shape = (1, 96)
+        self.h_obs = cuda.pagelocked_empty(
+            shape=self.obs_shape, dtype=np.float32
+        )
         self.h_shape = (num_layers, 1, hidden_size)
         self.c_shape = (num_layers, 1, hidden_size)
 
@@ -123,27 +127,63 @@ class TrtPolicyRunner:
         self.c_out_size = int(np.prod(self.c_out_shape))
 
         # 6) GPU 메모리 할당
-        self.d_obs = cuda.mem_alloc(self.obs_size * np.float32().nbytes)
-        self.d_h_in = cuda.mem_alloc(self.h_size * np.float32().nbytes)
-        self.d_c_in = cuda.mem_alloc(self.c_size * np.float32().nbytes)
+        self.in_total_size = self.obs_size + self.h_size + self.c_size
+        self.out_total_size = self.actions_size + self.h_out_size + self.c_out_size
 
-        self.d_actions = cuda.mem_alloc(self.actions_size * np.float32().nbytes)
-        self.d_h_out = cuda.mem_alloc(self.h_out_size * np.float32().nbytes)
-        self.d_c_out = cuda.mem_alloc(self.c_out_size * np.float32().nbytes)
+        self.d_in = cuda.mem_alloc(self.in_total_size * np.float32().nbytes)
+        self.d_out = cuda.mem_alloc(self.out_total_size * np.float32().nbytes)
 
-        # 7) 호스트 버퍼
-        self.h_actions = np.empty(self.actions_shape, dtype=np.float32)
-        self.h_h = np.zeros(self.h_shape, dtype=np.float32)
-        self.h_c = np.zeros(self.c_shape, dtype=np.float32)
+        # 개별 텐서의 디바이스 주소 계산 (offset)
+        float_bytes = np.float32().nbytes
+        obs_offset = 0
+        h_offset = obs_offset + self.obs_size * float_bytes
+        c_offset = h_offset + self.h_size * float_bytes
 
-        # 8) 텐서 주소 바인딩 (TensorRT 10: 이름 기준)
-        self.context.set_tensor_address(self.obs_name, int(self.d_obs))
-        self.context.set_tensor_address(self.h_in_name, int(self.d_h_in))
-        self.context.set_tensor_address(self.c_in_name, int(self.d_c_in))
+        actions_offset = 0
+        h_out_offset = actions_offset + self.actions_size * float_bytes
+        c_out_offset = h_out_offset + self.h_out_size * float_bytes
 
-        self.context.set_tensor_address(self.actions_name, int(self.d_actions))
-        self.context.set_tensor_address(self.h_out_name, int(self.d_h_out))
-        self.context.set_tensor_address(self.c_out_name, int(self.d_c_out))
+        self.d_obs    = int(self.d_in)  + obs_offset
+        self.d_h_in   = int(self.d_in)  + h_offset
+        self.d_c_in   = int(self.d_in)  + c_offset
+        self.d_actions = int(self.d_out) + actions_offset
+        self.d_h_out   = int(self.d_out) + h_out_offset
+        self.d_c_out   = int(self.d_out) + c_out_offset
+
+        # 7) 호스트 버퍼: in/out 통합 버퍼 + view
+        self.h_in_flat = cuda.pagelocked_empty(
+            shape=(self.in_total_size,), dtype=np.float32
+        )
+        self.h_out_flat = cuda.pagelocked_empty(
+            shape=(self.out_total_size,), dtype=np.float32
+        )
+
+        # numpy view로 개별 텐서 모양 매핑
+        offset = 0
+        self.h_obs = self.h_in_flat[offset:offset+self.obs_size].reshape(self.obs_shape)
+        offset += self.obs_size
+        self.h_h = self.h_in_flat[offset:offset+self.h_size].reshape(self.h_shape)
+        offset += self.h_size
+        self.h_c = self.h_in_flat[offset:offset+self.c_size].reshape(self.c_shape)
+
+        offset = 0
+        self.h_actions = self.h_out_flat[offset:offset+self.actions_size].reshape(self.actions_shape)
+        offset += self.actions_size
+        self.h_h_out = self.h_out_flat[offset:offset+self.h_out_size].reshape(self.h_out_shape)
+        offset += self.h_out_size
+        self.h_c_out = self.h_out_flat[offset:offset+self.c_out_size].reshape(self.c_out_shape)
+
+        self.h_h.fill(0.0)
+        self.h_c.fill(0.0)
+
+        # 8) 텐서 주소 바인딩
+        self.context.set_tensor_address(self.obs_name, self.d_obs)
+        self.context.set_tensor_address(self.h_in_name, self.d_h_in)
+        self.context.set_tensor_address(self.c_in_name, self.d_c_in)
+
+        self.context.set_tensor_address(self.actions_name, self.d_actions)
+        self.context.set_tensor_address(self.h_out_name, self.d_h_out)
+        self.context.set_tensor_address(self.c_out_name, self.d_c_out)
 
         # CUDA 스트림
         self.stream = cuda.Stream()
@@ -158,30 +198,27 @@ class TrtPolicyRunner:
         obs_np: shape (96,) 또는 (1,96) float32.
         내부적으로 h_h, h_c를 유지하면서 매 스텝 업데이트.
         """
-        # 1) obs shape 맞추기
         if obs_np.ndim == 1:
             obs_np = obs_np.reshape(self.obs_shape)
         elif obs_np.shape != self.obs_shape:
             raise ValueError(f"Expected obs shape {self.obs_shape}, got {obs_np.shape}")
-        obs_np = np.ascontiguousarray(obs_np, dtype=np.float32)
+        np.copyto(self.h_obs, obs_np.astype(np.float32, copy=False))
 
-        # 2) Host -> Device 복사 (obs, h_in, c_in)
-        cuda.memcpy_htod_async(self.d_obs, obs_np, self.stream)
-        cuda.memcpy_htod_async(self.d_h_in, self.h_h, self.stream)
-        cuda.memcpy_htod_async(self.d_c_in, self.h_c, self.stream)
+        # H2D 한 번
+        cuda.memcpy_htod_async(self.d_in, self.h_in_flat, self.stream)
 
-        # 3) 실행
+        # 실행
         self.context.execute_async_v3(stream_handle=self.stream.handle)
 
-        # 4) Device -> Host 복사 (actions, h_out, c_out)
-        cuda.memcpy_dtoh_async(self.h_actions, self.d_actions, self.stream)
-        cuda.memcpy_dtoh_async(self.h_h, self.d_h_out, self.stream)
-        cuda.memcpy_dtoh_async(self.h_c, self.d_c_out, self.stream)
-
+        # D2H 한 번
+        cuda.memcpy_dtoh_async(self.h_out_flat, self.d_out, self.stream)
         self.stream.synchronize()
 
-        # actions만 리턴 (1D)
-        return self.h_actions.squeeze()
+        # hidden state 업데이트 (view이므로 copy 불필요)
+        np.copyto(self.h_h, self.h_h_out)
+        np.copyto(self.h_c, self.h_c_out)
+
+        return np.asarray(self.h_actions).squeeze()
     
     def __del__(self):
         """pycuda로 할당한 GPU 리소스 정리."""
@@ -200,7 +237,9 @@ class TrtPolicyRunner:
                 if buf is not None:
                     buf.free()
                     setattr(self, name, None)
-
+            # 스트림 삭제
+            if hasattr(self, "stream"):
+                del self.stream
             # TensorRT 객체들 (Python 객체만 끊어 주면 됨)
             if hasattr(self, "context"):
                 self.context = None

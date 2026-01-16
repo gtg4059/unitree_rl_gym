@@ -265,7 +265,7 @@ class Controller:
         if elapsed > 0.02:
             print("infer",middle)
             print("DDS",down)
-            # print(elapsed)
+            print("pass")
             pass
     
     def __del__(self):
