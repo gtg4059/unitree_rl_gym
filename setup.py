@@ -8,4 +8,5 @@ setup(name='unitree_rl_gym',
       packages=find_packages(),
       author_email='support@unitree.com',
       description='Template RL environments for Unitree Robots',
-      install_requires=['matplotlib', 'tensorboard','mujoco==3.2.3', 'pyyaml', 'ultralytics','roboflow','zmq','pyrealsense2','pandas'])
+      #install_requires=['matplotlib', 'tensorboard','mujoco==3.2.3', 'pyyaml', 'ultralytics','roboflow','zmq','pyrealsense2'])
+      install_requires=['matplotlib','mujoco==3.2.3', 'pyyaml','pycuda<2022.1'])
