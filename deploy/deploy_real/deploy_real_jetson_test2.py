@@ -403,7 +403,19 @@ class Controller:
         """제어 루프 중지"""
         if self.lowCmdWriteThreadPtr is not None:
             self.running = False
-            self.lowCmdWriteThreadPtr.Stop()
+            # RecurrentThread는 running 플래그가 False가 되면 LowCmdWrite에서 자동으로 반환됨
+            # 스레드가 자연스럽게 종료될 때까지 잠시 대기
+            try:
+                # RecurrentThread의 내부 스레드 객체에 접근 시도
+                if hasattr(self.lowCmdWriteThreadPtr, 'thread'):
+                    self.lowCmdWriteThreadPtr.thread.join(timeout=1.0)
+                elif hasattr(self.lowCmdWriteThreadPtr, '_thread'):
+                    self.lowCmdWriteThreadPtr._thread.join(timeout=1.0)
+                elif hasattr(self.lowCmdWriteThreadPtr, 'join'):
+                    self.lowCmdWriteThreadPtr.join(timeout=1.0)
+            except (AttributeError, TypeError):
+                # join 메서드가 없거나 접근할 수 없는 경우, 짧은 대기 후 진행
+                time.sleep(0.1)
             self.lowCmdWriteThreadPtr = None
             print("Control thread stopped")
     
