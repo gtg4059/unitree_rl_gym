@@ -3,6 +3,7 @@ from pathlib import Path
 import pycuda.driver as cuda
 import pycuda.autoinit
 import numpy as np
+from legged_gym import LEGGED_GYM_ROOT_DIR
 
 def build_engine_from_onnx(
     onnx_path: str,
@@ -212,6 +213,6 @@ class TrtPolicyRunner:
             pass
 
 if __name__ == "__main__":
-    onnx_path = "/home/unitree/unitree_rl_gym/deploy/deploy_real/policy/g1/exported/policies/policy.onnx"
-    engine_path = "/home/unitree/unitree_rl_gym/deploy/deploy_real/policy/g1/exported/policies/policy.engine"
+    onnx_path = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy.onnx"
+    engine_path = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy.engine"
     build_engine_from_onnx(onnx_path, engine_path, fp16=True)
