@@ -119,6 +119,14 @@ class Controller:
         # RecurrentThread for stable control loop timing
         self.lowCmdWriteThreadPtr = None
         self.running = False
+        
+        # 디버깅: 시간 측정 변수
+        self.loop_times = []  # 전체 루프 시간 저장
+        self.inference_times = []  # 추론 시간 저장
+        self.command_times = []  # 명령 전송 시간 저장
+        self.max_history = 100  # 통계 계산을 위한 최대 저장 개수
+        self.stats_print_interval = 50  # 통계 출력 주기 (루프 횟수)
+        self.last_stats_print = 0
 
     
     def LowStateHgHandler(self, msg: LowStateHG):
@@ -214,6 +222,9 @@ class Controller:
         """
         if not self.running:
             return
+        
+        # 전체 루프 시간 측정 시작
+        loop_start_time = time.perf_counter()
             
         self.counter += 1
 
@@ -276,8 +287,10 @@ class Controller:
         self.obs[6 + num_actions * 2:6 + num_actions * 3] = self.action
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.cmd_scale_max_cmd
         
-        # Get the action from the policy network
+        # Get the action from the policy network - 추론 시간 측정
+        inference_start_time = time.perf_counter()
         self.action = self.policy_run.infer(self.obs)
+        inference_elapsed = (time.perf_counter() - inference_start_time) * 1000.0  # ms
         
         # Compute target_dof_pos using in-place multiplication
         np.multiply(self.action, self.action_scale_val, out=self.target_dof_pos)
@@ -308,8 +321,68 @@ class Controller:
         #     self.low_cmd.motor_cmd[motor_idx].kd = self.arm_waist_kds_arr[i]
         #     self.low_cmd.motor_cmd[motor_idx].tau = 0
         
-        # send the command
+        # send the command - 명령 전송 시간 측정
+        command_start_time = time.perf_counter()
         self.send_cmd(self.low_cmd)
+        command_elapsed = (time.perf_counter() - command_start_time) * 1000.0  # ms
+        
+        # 전체 루프 시간 측정
+        loop_elapsed = (time.perf_counter() - loop_start_time) * 1000.0  # ms
+        
+        # 시간 데이터 저장
+        self.loop_times.append(loop_elapsed)
+        self.inference_times.append(inference_elapsed)
+        self.command_times.append(command_elapsed)
+        
+        # 최대 개수 제한
+        if len(self.loop_times) > self.max_history:
+            self.loop_times.pop(0)
+            self.inference_times.pop(0)
+            self.command_times.pop(0)
+        
+        # 20ms 초과 시 즉시 경고
+        if loop_elapsed > 20.0:
+            print(f"[WARNING] Loop time exceeded: {loop_elapsed:.2f}ms (target: 20ms) | "
+                  f"Inference: {inference_elapsed:.2f}ms | Command: {command_elapsed:.2f}ms")
+        
+        # 주기적으로 통계 출력
+        if self.counter - self.last_stats_print >= self.stats_print_interval:
+            self._print_timing_stats()
+            self.last_stats_print = self.counter
+    
+    def _print_timing_stats(self):
+        """시간 통계 출력"""
+        if len(self.loop_times) == 0:
+            return
+        
+        loop_arr = np.array(self.loop_times)
+        inference_arr = np.array(self.inference_times)
+        command_arr = np.array(self.command_times)
+        
+        # Loop time 통계
+        loop_avg = np.mean(loop_arr)
+        loop_min = np.min(loop_arr)
+        loop_max = np.max(loop_arr)
+        loop_std = np.std(loop_arr)
+        loop_over_20ms = np.sum(loop_arr > 20.0)
+        loop_over_20ms_ratio = (loop_over_20ms / len(loop_arr)) * 100.0
+        
+        # Inference time 통계
+        inference_avg = np.mean(inference_arr)
+        inference_min = np.min(inference_arr)
+        inference_max = np.max(inference_arr)
+        inference_std = np.std(inference_arr)
+        
+        # Command time 통계
+        command_avg = np.mean(command_arr)
+        command_min = np.min(command_arr)
+        command_max = np.max(command_arr)
+        command_std = np.std(command_arr)
+        
+        print(f"[Timing Stats] Loop: Avg={loop_avg:.2f}ms (Min={loop_min:.2f}, Max={loop_max:.2f}, Std={loop_std:.2f}) | "
+              f">20ms: {loop_over_20ms_ratio:.1f}% ({loop_over_20ms}/{len(loop_arr)})")
+        print(f"           Inference: Avg={inference_avg:.2f}ms (Min={inference_min:.2f}, Max={inference_max:.2f}, Std={inference_std:.2f}ms)")
+        print(f"           Command: Avg={command_avg:.2f}ms (Min={command_min:.2f}, Max={command_max:.2f}, Std={command_std:.2f}ms)")
     
     def Start(self):
         """RecurrentThread 기반 제어 루프 시작"""
