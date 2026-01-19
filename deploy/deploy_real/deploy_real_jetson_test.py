@@ -26,7 +26,7 @@ import multiprocessing
 # from multiprocessing import shared_memory, Array, Lock
 # from robot_control.robot_hand_inspire import Inspire_Controller
 
-def inference_process_worker(obs_queue, action_queue, policy_path, num_actions, num_obs, num_layers, hidden_size, stop_event):
+def inference_process_worker(obs_queue, action_queue, policy_path, num_actions, num_obs, num_layers, hidden_size, stop_event, init_ready_event):
     """
     별도 프로세스에서 실행되는 추론 워커
     GPU 리소스를 독립적으로 사용하여 추론 성능 향상
@@ -42,6 +42,10 @@ def inference_process_worker(obs_queue, action_queue, policy_path, num_actions, 
         # 추론 프로세스에서 TrtPolicyRunner 초기화
         policy_runner = TrtPolicyRunner(policy_path, num_layers=num_layers, hidden_size=hidden_size)
         print(f"[Inference Process] Policy runner initialized in PID {os.getpid()}")
+        
+        # 초기화 완료 신호 전송
+        init_ready_event.set()
+        print(f"[Inference Process] Initialization complete, ready to process observations")
         
         while not stop_event.is_set():
             try:
@@ -84,6 +88,7 @@ class Controller:
         self.obs_queue = None
         self.action_queue = None
         self.inference_stop_event = None
+        self.inference_init_ready = None  # 초기화 완료 이벤트
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -407,8 +412,10 @@ class Controller:
             print("Control thread already running")
             return
         
-        # 추론 프로세스 시작
+        # 추론 프로세스 시작 및 초기화 완료 대기
         self._start_inference_process()
+        # _start_inference_process() 내부에서 초기화 완료를 기다리므로
+        # 여기서는 바로 제어 루프를 시작할 수 있음
             
         self.running = True
         self.lowCmdWriteThreadPtr = RecurrentThread(
@@ -448,8 +455,9 @@ class Controller:
         self.obs_queue = Queue(maxsize=2)
         self.action_queue = Queue(maxsize=2)
         
-        # 프로세스 종료 이벤트
+        # 프로세스 종료 이벤트 및 초기화 완료 이벤트
         self.inference_stop_event = multiprocessing.Event()
+        self.inference_init_ready = multiprocessing.Event()
         
         # 추론 프로세스 시작
         self.inference_process = Process(
@@ -462,12 +470,58 @@ class Controller:
                 self.config.num_obs,
                 1,  # num_layers
                 64,  # hidden_size
-                self.inference_stop_event
+                self.inference_stop_event,
+                self.inference_init_ready
             ),
             daemon=True
         )
         self.inference_process.start()
         print(f"[Main Process] Inference process started with PID {self.inference_process.pid}")
+        
+        # 초기화 완료 대기 (최대 10초)
+        # 대기하는 동안 default position 유지
+        print("[Main Process] Waiting for inference process initialization...")
+        start_wait_time = time.time()
+        timeout = 10.0
+        
+        while not self.inference_init_ready.is_set():
+            # 초기화 대기 중에도 default position 유지
+            self._send_default_pos_cmd()
+            
+            # 타임아웃 확인
+            if time.time() - start_wait_time > timeout:
+                raise RuntimeError("[Main Process] Inference process initialization timeout!")
+            
+            # 짧은 대기 (제어 주기 유지)
+            time.sleep(self.config.control_dt)
+        
+        print("[Main Process] Inference process initialization complete!")
+    
+    def _send_default_pos_cmd(self):
+        """Default position 명령 전송 (초기화 중 유지용)"""
+        try:
+            # Leg joints
+            for i in range(len(self.config.leg_joint2motor_idx)):
+                motor_idx = self.config.leg_joint2motor_idx[i]
+                self.low_cmd.motor_cmd[motor_idx].q = self.config.default_angles[i]
+                self.low_cmd.motor_cmd[motor_idx].qd = 0
+                self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+                self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+                self.low_cmd.motor_cmd[motor_idx].tau = 0
+            
+            # Arm and waist joints
+            for i in range(len(self.config.arm_waist_joint2motor_idx)):
+                motor_idx = self.config.arm_waist_joint2motor_idx[i]
+                self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i]
+                self.low_cmd.motor_cmd[motor_idx].qd = 0
+                self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+                self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+                self.low_cmd.motor_cmd[motor_idx].tau = 0
+            
+            self.send_cmd(self.low_cmd)
+        except Exception as e:
+            # 에러 발생 시 무시 (초기화 중일 수 있음)
+            pass
     
     def _stop_inference_process(self):
         """추론 프로세스 중지"""
@@ -485,6 +539,7 @@ class Controller:
             self.obs_queue = None
             self.action_queue = None
             self.inference_stop_event = None
+            self.inference_init_ready = None
             print("[Main Process] Inference process stopped")
     
     def __del__(self):
