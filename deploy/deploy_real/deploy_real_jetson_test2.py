@@ -2,7 +2,6 @@ from legged_gym import LEGGED_GYM_ROOT_DIR
 from typing import Union
 import numpy as np
 import time
-import torch
 import os
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
@@ -421,9 +420,17 @@ class Controller:
     
     def __del__(self):
         """리소스 정리"""
-        if self.lowCmdWriteThreadPtr is not None:
-            self.Stop()
-        print("controller terminated")
+        try:
+            if self.lowCmdWriteThreadPtr is not None:
+                self.Stop()
+        except Exception:
+            # 소멸자에서 예외가 발생해도 무시 (프로그램 종료 중일 수 있음)
+            pass
+        try:
+            print("controller terminated")
+        except Exception:
+            # print도 실패할 수 있음 (stdout이 이미 닫혔을 수 있음)
+            pass
 
 
 if __name__ == "__main__":
@@ -466,9 +473,16 @@ if __name__ == "__main__":
         pass
     finally:
         # Stop control thread
-        controller.Stop()
+        try:
+            controller.Stop()
+        except Exception as e:
+            print(f"Error stopping controller: {e}")
+        
         # Enter the damping state
-        create_damping_cmd(controller.low_cmd)
-        controller.send_cmd(controller.low_cmd)
+        try:
+            create_damping_cmd(controller.low_cmd)
+            controller.send_cmd(controller.low_cmd)
+        except Exception as e:
+            print(f"Error sending damping command: {e}")
 
     print("Exit")
