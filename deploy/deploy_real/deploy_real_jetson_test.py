@@ -349,24 +349,24 @@ class Controller:
         self.action = self.latest_action.copy()
         target_dof_pos = self.action * self.config.action_scale
 
-        # # # Build low cmd
-        # for i in range(len(self.config.leg_joint2motor_idx)):
-        #     motor_idx = self.config.leg_joint2motor_idx[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
-        # # print("arm_waist_joint2motor_idx")
-        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
-        #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-        #                                                   self.config.arm_waist_limits_high[i])
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # # Build low cmd
+        for i in range(len(self.config.leg_joint2motor_idx)):
+            motor_idx = self.config.leg_joint2motor_idx[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # print("arm_waist_joint2motor_idx")
+        for i in range(len(self.config.arm_waist_joint2motor_idx)):
+            # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+            motor_idx = self.config.arm_waist_joint2motor_idx[i]
+            self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
+                                                          self.config.arm_waist_limits_high[i])
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
 
         # send the command
         self.send_cmd(self.low_cmd)
