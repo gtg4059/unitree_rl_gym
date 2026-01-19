@@ -13,7 +13,6 @@ from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_ as LowCmdGo
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as LowStateHG
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_ as LowStateGo
 from unitree_sdk2py.utils.crc import CRC
-from unitree_sdk2py.utils.thread import RecurrentThread
 
 from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_hg, init_cmd_go, MotorMode
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
@@ -115,10 +114,6 @@ class Controller:
         elif config.msg_type == "go":
             init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)
         
-        # RecurrentThread for stable control loop timing
-        self.lowCmdWriteThreadPtr = None
-        self.running = False
-        
         # 디버깅: 시간 측정 변수
         self.loop_times = []  # 전체 루프 시간 저장
         self.inference_times = []  # 추론 시간 저장
@@ -214,14 +209,10 @@ class Controller:
             self.send_cmd(self.low_cmd)
             time.sleep(self.config.control_dt)
 
-    def LowCmdWrite(self):
+    def run(self):
         """
-        RecurrentThread에서 실행되는 제어 루프
-        타이밍 제어는 RecurrentThread가 담당하므로 여기서는 제어 로직만 수행
+        제어 루프 - 일반 while 루프에서 호출됨
         """
-        if not self.running:
-            return
-        
         # 전체 루프 시간 측정 시작
         loop_start_time = time.perf_counter()
             
@@ -348,6 +339,11 @@ class Controller:
         if self.counter - self.last_stats_print >= self.stats_print_interval:
             self._print_timing_stats()
             self.last_stats_print = self.counter
+        
+        # 타이밍 제어: 20ms 주기 유지 (deploy_real_v1.py와 동일한 방식)
+        elapsed_sec = (time.perf_counter() - loop_start_time)
+        if elapsed_sec < self.config.control_dt:
+            time.sleep(self.config.control_dt - elapsed_sec)
     
     def _print_timing_stats(self):
         """시간 통계 출력"""
@@ -382,55 +378,6 @@ class Controller:
               f">20ms: {loop_over_20ms_ratio:.1f}% ({loop_over_20ms}/{len(loop_arr)})")
         print(f"           Inference: Avg={inference_avg:.2f}ms (Min={inference_min:.2f}, Max={inference_max:.2f}, Std={inference_std:.2f}ms)")
         print(f"           Command: Avg={command_avg:.2f}ms (Min={command_min:.2f}, Max={command_max:.2f}, Std={command_std:.2f}ms)")
-    
-    def Start(self):
-        """RecurrentThread 기반 제어 루프 시작"""
-        if self.lowCmdWriteThreadPtr is not None:
-            print("Control thread already running")
-            return
-        
-        self.running = True
-        self.lowCmdWriteThreadPtr = RecurrentThread(
-            name="lowcmd_write",
-            interval=self.config.control_dt,
-            target=self.LowCmdWrite
-        )
-        self.lowCmdWriteThreadPtr.Start()
-        print(f"Control thread started with {1.0/self.config.control_dt:.1f}Hz period ({self.config.control_dt*1000:.1f}ms)")
-    
-    def Stop(self):
-        """제어 루프 중지"""
-        if self.lowCmdWriteThreadPtr is not None:
-            self.running = False
-            # RecurrentThread는 running 플래그가 False가 되면 LowCmdWrite에서 자동으로 반환됨
-            # 스레드가 자연스럽게 종료될 때까지 잠시 대기
-            try:
-                # RecurrentThread의 내부 스레드 객체에 접근 시도
-                if hasattr(self.lowCmdWriteThreadPtr, 'thread'):
-                    self.lowCmdWriteThreadPtr.thread.join(timeout=1.0)
-                elif hasattr(self.lowCmdWriteThreadPtr, '_thread'):
-                    self.lowCmdWriteThreadPtr._thread.join(timeout=1.0)
-                elif hasattr(self.lowCmdWriteThreadPtr, 'join'):
-                    self.lowCmdWriteThreadPtr.join(timeout=1.0)
-            except (AttributeError, TypeError):
-                # join 메서드가 없거나 접근할 수 없는 경우, 짧은 대기 후 진행
-                time.sleep(0.1)
-            self.lowCmdWriteThreadPtr = None
-            print("Control thread stopped")
-    
-    def __del__(self):
-        """리소스 정리"""
-        try:
-            if self.lowCmdWriteThreadPtr is not None:
-                self.Stop()
-        except Exception:
-            # 소멸자에서 예외가 발생해도 무시 (프로그램 종료 중일 수 있음)
-            pass
-        try:
-            print("controller terminated")
-        except Exception:
-            # print도 실패할 수 있음 (stdout이 이미 닫혔을 수 있음)
-            pass
 
 
 if __name__ == "__main__":
@@ -459,30 +406,18 @@ if __name__ == "__main__":
     # Enter the default position state, press the A key to continue executing
     controller.default_pos_state()
 
-    # Start RecurrentThread-based control loop
-    controller.Start()
-
-    # Main loop: wait for exit signal
-    try:
-        while True:
+    # Main control loop
+    while True:
+        try:
+            controller.run()
             # Press the select key to exit
             if controller.remote_controller.button[KeyMap.select] == 1:
                 break
-            time.sleep(0.1)  # Check exit condition periodically
-    except KeyboardInterrupt:
-        pass
-    finally:
-        # Stop control thread
-        try:
-            controller.Stop()
-        except Exception as e:
-            print(f"Error stopping controller: {e}")
-        
-        # Enter the damping state
-        try:
-            create_damping_cmd(controller.low_cmd)
-            controller.send_cmd(controller.low_cmd)
-        except Exception as e:
-            print(f"Error sending damping command: {e}")
+        except KeyboardInterrupt:
+            break
+    
+    # Enter the damping state
+    create_damping_cmd(controller.low_cmd)
+    controller.send_cmd(controller.low_cmd)
 
     print("Exit")
