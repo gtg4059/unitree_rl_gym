@@ -60,6 +60,25 @@ class Controller:
         self.dof_vel_scale_arr = np.array(config.dof_vel_scale, dtype=np.float32)
         self.ang_vel_scale_val = config.ang_vel_scale
         self.cmd_scale_max_cmd = config.cmd_scale * config.max_cmd
+        self.action_scale_val = config.action_scale
+        
+        # Pre-compute limits arrays for faster clipping
+        self.limits_low_arr = np.array(config.limits_low, dtype=np.float32)
+        self.limits_high_arr = np.array(config.limits_high, dtype=np.float32)
+        self.arm_waist_limits_low_arr = np.array(config.arm_waist_limits_low, dtype=np.float32)
+        self.arm_waist_limits_high_arr = np.array(config.arm_waist_limits_high, dtype=np.float32)
+        
+        # Pre-compute kp/kd arrays
+        self.kps_arr = np.array(config.kps, dtype=np.float32)
+        self.kds_arr = np.array(config.kds, dtype=np.float32)
+        self.arm_waist_kps_arr = np.array(config.arm_waist_kps, dtype=np.float32)
+        self.arm_waist_kds_arr = np.array(config.arm_waist_kds, dtype=np.float32)
+        
+        # Pre-allocate target_dof_pos array
+        self.target_dof_pos = np.zeros(config.num_actions, dtype=np.float32)
+        
+        # CRC 객체 재사용 (매번 생성하지 않음)
+        self.crc = CRC()
 
         if config.msg_type == "hg":
             # g1 and h1_2 use the hg msg type
@@ -112,7 +131,7 @@ class Controller:
         self.remote_controller.set(self.low_state.wireless_remote)
 
     def send_cmd(self, cmd: Union[LowCmdGo, LowCmdHG]):
-        cmd.crc = CRC().Crc(cmd)
+        cmd.crc = self.crc.Crc(cmd)
         self.lowcmd_publisher_.Write(cmd)
 
     def wait_for_low_state(self):
@@ -260,26 +279,34 @@ class Controller:
         # Get the action from the policy network
         self.action = self.policy_run.infer(self.obs)
         
-        target_dof_pos = self.action * self.config.action_scale #29
+        # Compute target_dof_pos using in-place multiplication
+        np.multiply(self.action, self.action_scale_val, out=self.target_dof_pos)
         
-        # # # Build low cmd
-        # for i in range(len(self.config.leg_joint2motor_idx)):
-        #     motor_idx = self.config.leg_joint2motor_idx[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
-        # # print("arm_waist_joint2motor_idx")
-        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
-        #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-        #                                                   self.config.arm_waist_limits_high[i])
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        # Build low cmd - optimized with pre-computed arrays
+        leg_num = len(self.config.leg_joint2motor_idx)
+        # Clip leg joints
+        np.clip(self.target_dof_pos[:leg_num], self.limits_low_arr, self.limits_high_arr, out=self.target_dof_pos[:leg_num])
+        # Set leg motor commands
+        for i in range(leg_num):
+            motor_idx = self.leg_motor_indices[i]
+            self.low_cmd.motor_cmd[motor_idx].q = self.target_dof_pos[i]
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.kps_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.kds_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
+        
+        # Clip arm/waist joints
+        arm_start = leg_num
+        arm_end = leg_num + len(self.config.arm_waist_joint2motor_idx)
+        np.clip(self.target_dof_pos[arm_start:arm_end], self.arm_waist_limits_low_arr, self.arm_waist_limits_high_arr, out=self.target_dof_pos[arm_start:arm_end])
+        # Set arm/waist motor commands
+        for i in range(len(self.config.arm_waist_joint2motor_idx)):
+            motor_idx = self.arm_motor_indices[i]
+            self.low_cmd.motor_cmd[motor_idx].q = self.target_dof_pos[arm_start + i]
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.arm_waist_kps_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.arm_waist_kds_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
         
         # send the command
         self.send_cmd(self.low_cmd)

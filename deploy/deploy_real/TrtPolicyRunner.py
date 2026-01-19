@@ -198,11 +198,17 @@ class TrtPolicyRunner:
         obs_np: shape (96,) 또는 (1,96) float32.
         내부적으로 h_h, h_c를 유지하면서 매 스텝 업데이트.
         """
+        # Shape 확인 및 변환 최적화
         if obs_np.ndim == 1:
-            obs_np = obs_np.reshape(self.obs_shape)
-        elif obs_np.shape != self.obs_shape:
+            # 1D array를 직접 복사 (reshape 불필요)
+            if obs_np.shape[0] != self.obs_size:
+                raise ValueError(f"Expected obs size {self.obs_size}, got {obs_np.shape[0]}")
+            # 직접 복사 (더 빠름)
+            np.copyto(self.h_obs.ravel(), obs_np.astype(np.float32, copy=False))
+        elif obs_np.shape == self.obs_shape:
+            np.copyto(self.h_obs, obs_np.astype(np.float32, copy=False))
+        else:
             raise ValueError(f"Expected obs shape {self.obs_shape}, got {obs_np.shape}")
-        np.copyto(self.h_obs, obs_np.astype(np.float32, copy=False))
 
         # H2D 한 번
         cuda.memcpy_htod_async(self.d_in, self.h_in_flat, self.stream)
@@ -214,11 +220,12 @@ class TrtPolicyRunner:
         cuda.memcpy_dtoh_async(self.h_out_flat, self.d_out, self.stream)
         self.stream.synchronize()
 
-        # hidden state 업데이트 (view이므로 copy 불필요)
+        # hidden state 업데이트 (in-place copy로 최적화)
         np.copyto(self.h_h, self.h_h_out)
         np.copyto(self.h_c, self.h_c_out)
 
-        return np.asarray(self.h_actions).squeeze()
+        # view 반환 (복사 없음)
+        return self.h_actions.squeeze()
     
     def __del__(self):
         """pycuda로 할당한 GPU 리소스 정리."""
