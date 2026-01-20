@@ -290,26 +290,26 @@ class Controller:
         # Clip leg joints
         np.clip(self.target_dof_pos[:leg_num], self.limits_low_arr, self.limits_high_arr, out=self.target_dof_pos[:leg_num])
         # Set leg motor commands
-        # for i in range(leg_num):
-        #     motor_idx = self.leg_motor_indices[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = self.target_dof_pos[i]
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.kps_arr[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.kds_arr[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        for i in range(leg_num):
+            motor_idx = self.leg_motor_indices[i]
+            self.low_cmd.motor_cmd[motor_idx].q = self.target_dof_pos[i]
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.kps_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.kds_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
         
         # Clip arm/waist joints
         arm_start = leg_num
         arm_end = leg_num + len(self.config.arm_waist_joint2motor_idx)
         np.clip(self.target_dof_pos[arm_start:arm_end], self.arm_waist_limits_low_arr, self.arm_waist_limits_high_arr, out=self.target_dof_pos[arm_start:arm_end])
         # Set arm/waist motor commands
-        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
-        #     motor_idx = self.arm_motor_indices[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = self.target_dof_pos[arm_start + i]
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.arm_waist_kps_arr[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.arm_waist_kds_arr[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
+        for i in range(len(self.config.arm_waist_joint2motor_idx)):
+            motor_idx = self.arm_motor_indices[i]
+            self.low_cmd.motor_cmd[motor_idx].q = self.target_dof_pos[arm_start + i]
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.arm_waist_kps_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.arm_waist_kds_arr[i]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
         
         # send the command - 명령 전송 시간 측정
         command_start_time = time.perf_counter()
