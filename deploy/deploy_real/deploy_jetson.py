@@ -280,6 +280,8 @@ class Controller:
         # Get the action from the policy network - 추론 시간 측정
         inference_start_time = time.perf_counter()
         self.action = self.policy_run.infer(self.obs)
+        # Action 범위 제한: -50.0 ~ 50.0
+        np.clip(self.action, -50.0, 50.0, out=self.action)
         inference_elapsed = (time.perf_counter() - inference_start_time) * 1000.0  # ms
         
         # Compute target_dof_pos using in-place multiplication
