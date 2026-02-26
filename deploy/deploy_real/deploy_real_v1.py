@@ -4,7 +4,7 @@ import numpy as np
 import time
 import torch
 import os
-import pandas as pd
+# import pandas as pd
 import datetime
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
@@ -33,7 +33,6 @@ class Controller:
         self.robot_data = []
         # Initialize the policy network
         self.policy_run = torch.jit.load(config.policy_run)
-        self.policy_stop = torch.jit.load(config.policy_stop)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -80,36 +79,36 @@ class Controller:
         elif config.msg_type == "go":
             init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)
 
-    def save_data_to_csv(self, filename=None):
-        """
-        수집된 로봇 데이터를 CSV 파일로 저장
-        """
-        if not self.robot_data:
-            print("No data to save.")
-            return
+    # def save_data_to_csv(self, filename=None):
+    #     """
+    #     수집된 로봇 데이터를 CSV 파일로 저장
+    #     """
+    #     if not self.robot_data:
+    #         print("No data to save.")
+    #         return
         
-        if filename is None:
-            # 현재 시간을 포함한 파일명 생성
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"robot_data_{timestamp}.csv"
+    #     if filename is None:
+    #         # 현재 시간을 포함한 파일명 생성
+    #         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    #         filename = f"robot_data_{timestamp}.csv"
         
-        # DataFrame 생성
-        df = pd.DataFrame(self.robot_data)
-        # CSV 파일로 저장
-        df.to_csv(filename, index=False)
+    #     # DataFrame 생성
+    #     df = pd.DataFrame(self.robot_data)
+    #     # CSV 파일로 저장
+    #     df.to_csv(filename, index=False)
         
-        # action 통계 (처음 5개 관절)
-        print("Action (first 5 joints):")
-        for j in range(min(5, 23)):
-            col = f'action_{j}'
-            if col in df.columns:
-                mean_val = df[col].mean()
-                std_val = df[col].std()
-                min_val = df[col].min()
-                max_val = df[col].max()
-                print(f"  joint_{j}: mean={mean_val:.6f}, std={std_val:.6f}, range=[{min_val:.6f}, {max_val:.6f}]")
+    #     # action 통계 (처음 5개 관절)
+    #     print("Action (first 5 joints):")
+    #     for j in range(min(5, 23)):
+    #         col = f'action_{j}'
+    #         if col in df.columns:
+    #             mean_val = df[col].mean()
+    #             std_val = df[col].std()
+    #             min_val = df[col].min()
+    #             max_val = df[col].max()
+    #             print(f"  joint_{j}: mean={mean_val:.6f}, std={std_val:.6f}, range=[{min_val:.6f}, {max_val:.6f}]")
         
-        return filename
+    #     return filename
     
     def LowStateHgHandler(self, msg: LowStateHG):
         self.low_state = msg
@@ -230,7 +229,7 @@ class Controller:
             self.cmd[0] = self.remote_controller.ly*1
         else:
             self.cmd[0] = self.remote_controller.ly
-        # self.cmd[0] = self.remote_controller.ly
+        # self.cmd[1] = 0 # rough
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
 
@@ -243,11 +242,11 @@ class Controller:
         self.obs[3:6] = gravity_orientation
         self.obs[6 : 6 + num_actions] = qj_obs
         self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
-        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
+        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = np.clip(self.action, -50, 50) # self.action
 
         # Get the action from the policy network
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-        obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
         # obs_tensor = torch.from_numpy(self.obs[:113]).unsqueeze(0)
         self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
 
@@ -262,7 +261,7 @@ class Controller:
         #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
-        target_dof_pos = self.action * self.config.action_scale #29
+        target_dof_pos = np.clip(self.action, -50, 50)  * self.config.action_scale #29
         # target_dof_pos = self.action * self.config.action_scale #29
         # print("target_dof_pos:",*target_dof_pos)
 
@@ -277,7 +276,7 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
         # print("arm_waist_joint2motor_idx")
-        for i in range(len(self.config.arm_waist_joint2motor_idx)):
+        for i in range(3):
             # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
             motor_idx = self.config.arm_waist_joint2motor_idx[i]
             self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
@@ -286,6 +285,24 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
+
+        for i in range(len(self.config.arm_waist_joint2motor_idx-3)):
+            motor_idx = self.config.arm_waist_joint2motor_idx[i+3]
+            self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i+3]
+            self.low_cmd.motor_cmd[motor_idx].qd = 0
+            self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i+3]
+            self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i+3]
+            self.low_cmd.motor_cmd[motor_idx].tau = 0
+
+        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
+        #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
+        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
+        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
+        #                                                   self.config.arm_waist_limits_high[i])
+        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
+        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
+        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
+        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
         # # 데이터 수집 (매 스텝마다)
         # data_row = {}
@@ -360,8 +377,8 @@ if __name__ == "__main__":
     create_damping_cmd(controller.low_cmd)
     controller.send_cmd(controller.low_cmd)
 
-    print("Saving robot data...")
-    csv_filename = controller.save_data_to_csv()
-    print(f"Data saved to: {csv_filename}")
+    # print("Saving robot data...")
+    # csv_filename = controller.save_data_to_csv()
+    # print(f"Data saved to: {csv_filename}")
 
     print("Exit")
