@@ -6,21 +6,26 @@ import torch
 import os
 import pandas as pd
 import datetime
+import sys
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
 from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_, unitree_hg_msg_dds__LowState_
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_, unitree_go_msg_dds__LowState_
+from unitree_sdk2py.idl.default import unitree_hg_msg_dds__MainBoardState_, unitree_hg_msg_dds__BmsState_
+
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_ as LowCmdHG
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_ as LowCmdGo
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as LowStateHG
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_ as LowStateGo
+from unitree_sdk2py.idl.unitree_hg.msg.dds_ import MainBoardState_ as MainBoardStateHG
+from unitree_sdk2py.idl.unitree_hg.msg.dds_ import BmsState_ as BmsStateHG
 from unitree_sdk2py.utils.crc import CRC
 
 from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_hg, init_cmd_go, MotorMode
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
 from common.remote_controller import RemoteController, KeyMap
-from config_v1 import Config
+from config_v1_safe import Config
 # from multiprocessing import Process, shared_memory, Array
 # from multiprocessing import shared_memory, Array, Lock
 # from robot_control.robot_hand_inspire import Inspire_Controller
@@ -47,6 +52,8 @@ class Controller:
             # g1 and h1_2 use the hg msg type
             self.low_cmd = unitree_hg_msg_dds__LowCmd_()
             self.low_state = unitree_hg_msg_dds__LowState_()
+            self.mainboard_state = unitree_hg_msg_dds__MainBoardState_()
+            self.bms_state = unitree_hg_msg_dds__BmsState_()
             self.mode_pr_ = MotorMode.PR
             self.mode_machine_ = 0
 
@@ -55,6 +62,10 @@ class Controller:
 
             self.lowstate_subscriber = ChannelSubscriber(config.lowstate_topic, LowStateHG)
             self.lowstate_subscriber.Init(self.LowStateHgHandler, 10)
+            self.mainboardstate_subscriber = ChannelSubscriber(config.mainboardstate_topic, MainBoardStateHG)
+            self.mainboardstate_subscriber.Init(self.MainBoardStateHgHandler, 10)
+            self.bmsstate_subscriber = ChannelSubscriber(config.bmsstate_topic, BmsStateHG)
+            self.bmsstate_subscriber.Init(self.BmsStateHgHandler, 10)
 
         elif config.msg_type == "go":
             # h1 uses the go msg type
@@ -110,6 +121,38 @@ class Controller:
         
         return filename
     
+    def quat_conjugate(self, q):
+        # q = [w, x, y, z]
+        return np.array([q[0], -q[1], -q[2], -q[3]])
+
+    def quat_rotate(self, q, v):
+        # quaternion * vector
+        w, x, y, z = q
+        q_vec = np.array([x, y, z])
+        uv = np.cross(q_vec, v)
+        uuv = np.cross(q_vec, uv)
+        return v + 2 * (w * uv + uuv)
+
+    def orientation(self, lowstate):
+        imu = lowstate.imu_state
+        # quaternion = [w, x, y, z]
+        quat = np.array([
+            imu.quaternion[0],
+            imu.quaternion[1],
+            imu.quaternion[2],
+            imu.quaternion[3]
+        ])
+
+        gravity = np.array([0.0, 0.0, -1.0])
+
+        # body frame으로 변환 (conjugate 사용)
+        q_conj = self.quat_conjugate(quat)
+        projected_gravity_b = self.quat_rotate(q_conj, gravity)
+
+        angle = np.arccos(-projected_gravity_b[2])
+
+        return abs(angle) * 180 / np.pi
+    
     def LowStateHgHandler(self, msg: LowStateHG):
         self.low_state = msg
         self.mode_machine_ = self.low_state.mode_machine
@@ -118,6 +161,12 @@ class Controller:
     def LowStateGoHandler(self, msg: LowStateGo):
         self.low_state = msg
         self.remote_controller.set(self.low_state.wireless_remote)
+
+    def MainBoardStateHgHandler(self, msg: MainBoardStateHG):
+        self.mainboard_state = msg
+
+    def BmsStateHgHandler(self, msg: BmsStateHG):
+        self.bms_state = msg
 
     def send_cmd(self, cmd: Union[LowCmdGo, LowCmdHG]):
         cmd.crc = CRC().Crc(cmd)
@@ -296,6 +345,32 @@ class Controller:
         #     self.send_cmd(self.low_cmd)
         #     time.sleep(0.1) # 명령 전송 후 잠시 대기
         #     raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
+
+        print(f"Current SOC: {self.bms_state.soc}%.")
+        print(f"Current Board temperature: {self.mainboard_state.temperature[0]}°C.") 
+        print(f"Current Motor temperature: {self.low_state.motor_state[0].temperature[0]}°C.") 
+        print(f"Current Body tilt angle: {self.orientation(self.low_state)}°.") 
+
+        # if self.bms_state.soc < 20: # low battery
+        #     print(f"Battery low! Current SOC: {self.bms_state.soc}%. Please charge the battery.")
+        #     create_damping_cmd(self.low_cmd)
+        #     time.sleep(2)
+        #     sys.exit(0)
+        # if self.mainboard_state.temperature[0] > 100: # over heating
+        #     print(f"Mainboard overheating! Current temperature: {self.mainboard_state.temperature[0]}°C. Please take a rest.")
+        #     create_damping_cmd(self.low_cmd)
+        #     time.sleep(2)
+        #     sys.exit(0)
+        # if self.low_state.motor_state[0].temperature[0] > 100: # over heating
+        #     print(f"Motor overheating! Current temperature: {self.low_state.motor_state[0].temperature[0]}°C. Please cool down any hot motor.")
+        #     create_damping_cmd(self.low_cmd)
+        #     time.sleep(2)   
+        #     sys.exit(0)
+        # if self.orientation(self.low_state) > 20: # excessive tilt
+        #     print(f"Excessive body tilt! Current body angle: {self.orientation(self.low_state)}°. Please adjust the robot posture.")
+        #     create_damping_cmd(self.low_cmd)
+        #     time.sleep(10)
+        #     sys.exit(0)
 
         # send the command
         self.send_cmd(self.low_cmd)
