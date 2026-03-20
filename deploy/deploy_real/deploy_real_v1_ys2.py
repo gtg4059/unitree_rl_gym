@@ -41,7 +41,6 @@ class Controller:
         self.target_dof_pos = config.default_angles.copy()
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
         self.cmd = np.array([0.0, 0, 0])
-        self.f_cmd = np.array([0, 0, 0], dtype=np.float32)
         self.counter = 0
         self.start_time = None
 
@@ -239,23 +238,18 @@ class Controller:
             if abs(self.cmd[i]) < 0.08:
                 self.cmd[i] = 0
 
-        num_actions = self.config.num_actions #29
-        self.obs[:3] = ang_vel #3
-        self.obs[3:6] = gravity_orientation #3
-        self.obs[6 : 6 + num_actions] = qj_obs #29
-        self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs #29
-        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action #29
+        num_actions = self.config.num_actions
+        self.obs[:3] = ang_vel
+        self.obs[3:6] = gravity_orientation
+        self.obs[6 : 6 + num_actions] = qj_obs
+        self.obs[6 + num_actions : 6 + num_actions * 2] = dqj_obs
+        self.obs[6 + num_actions * 2 : 6 + num_actions * 3] = self.action
 
         # Get the action from the policy network
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-        self.obs[9 + num_actions * 3:12 + num_actions * 3] = self.f_cmd * self.config.cmd_scale * self.config.max_cmd
-        print("obs", np.size(self.obs))
-
-        print(self.f_cmd * self.config.cmd_scale * self.config.max_cmd)
-        # self.obs[9 + num_actions * 3:12 + num_actions * 3] = self.f_cmd
-        # obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-        obs_tensor = torch.from_numpy(self.obs[:99]).unsqueeze(0)
-        self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
+        obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        # obs_tensor = torch.from_numpy(self.obs[:113]).unsqueeze(0)
+        self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
 
         # if controller.remote_controller.button[KeyMap.X] == 1:
         #     print("cmd:", self.cmd)

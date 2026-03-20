@@ -8,7 +8,6 @@ lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
 policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy.engine" # arm down sg
 # policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy-0926.pt" # arm down jh
-# policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_ys_force.pt" # force ys
 # policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop_0927.pt"
 policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop.pt" #
 # policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop_ys2.pt"
@@ -78,6 +77,5 @@ action_scale: 0.25
 cmd_scale: [2.0, 2.0, 0.25]
 num_actions: 29
 num_obs: 96
-# num_obs: 99 # ys force 0318
 
 max_cmd: [1.0, 1.0, 1.5]
