@@ -346,31 +346,31 @@ class Controller:
         #     time.sleep(0.1) # 명령 전송 후 잠시 대기
         #     raise SystemExit("Robot control terminated due to excessive motor velocity.") # 프로그램 강제 종료
 
-        print(f"Current SOC: {self.bms_state.soc}%.")
-        print(f"Current Board temperature: {self.mainboard_state.temperature[0]}°C.") 
-        print(f"Current Motor temperature: {self.low_state.motor_state[0].temperature[0]}°C.") 
+        # print(f"Current SOC: {self.bms_state.soc}%.")
+        # print(f"Current Board temperature: {self.mainboard_state.temperature[0]}°C.") 
+        # print(f"Current Motor temperature: {self.low_state.motor_state[0].temperature[0]}°C.") 
         print(f"Current Body tilt angle: {self.orientation(self.low_state)}°.") 
 
-        # if self.bms_state.soc < 20: # low battery
-        #     print(f"Battery low! Current SOC: {self.bms_state.soc}%. Please charge the battery.")
-        #     create_damping_cmd(self.low_cmd)
-        #     time.sleep(2)
-        #     sys.exit(0)
-        # if self.mainboard_state.temperature[0] > 100: # over heating
-        #     print(f"Mainboard overheating! Current temperature: {self.mainboard_state.temperature[0]}°C. Please take a rest.")
-        #     create_damping_cmd(self.low_cmd)
-        #     time.sleep(2)
-        #     sys.exit(0)
-        # if self.low_state.motor_state[0].temperature[0] > 100: # over heating
-        #     print(f"Motor overheating! Current temperature: {self.low_state.motor_state[0].temperature[0]}°C. Please cool down any hot motor.")
-        #     create_damping_cmd(self.low_cmd)
-        #     time.sleep(2)   
-        #     sys.exit(0)
-        # if self.orientation(self.low_state) > 20: # excessive tilt
-        #     print(f"Excessive body tilt! Current body angle: {self.orientation(self.low_state)}°. Please adjust the robot posture.")
-        #     create_damping_cmd(self.low_cmd)
-        #     time.sleep(10)
-        #     sys.exit(0)
+        if self.bms_state.soc < 20: # low battery
+            print(f"Battery low! Current SOC: {self.bms_state.soc}%. Please charge the battery.")
+            create_damping_cmd(self.low_cmd)
+            time.sleep(1)
+            sys.exit(0)
+        if self.mainboard_state.temperature[0] > 100: # over heating함, 온도 기준 정해야 함
+            print(f"Mainboard overheating! Current temperature: {self.mainboard_state.temperature[0]}°C. Please take a rest.")
+            create_damping_cmd(self.low_cmd)
+            time.sleep(1)
+            sys.exit(0)
+        if self.low_state.motor_state[0].temperature[0] > 70: # over heating, 온도 기준 정해야 함, 85도는 제조사 기준임
+            print(f"Motor overheating! Current temperature: {self.low_state.motor_state[0].temperature[0]}°C. Please cool down any hot motor.")
+            create_damping_cmd(self.low_cmd)
+            time.sleep(1)   
+            sys.exit(0)
+        if self.orientation(self.low_state) > 8: # excessive tilt, 5도 살짝 밀치기, 8도 조금 세게 밀치기, 30도 이상 매우 위험
+            print(f"Excessive body tilt! Current body angle: {self.orientation(self.low_state)}°. Please adjust the robot posture.")
+            create_damping_cmd(self.low_cmd)
+            time.sleep(2)
+            sys.exit(0)
 
         # send the command
         self.send_cmd(self.low_cmd)
