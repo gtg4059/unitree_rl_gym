@@ -33,7 +33,6 @@ class Controller:
         self.robot_data = []
         # Initialize the policy network
         self.policy_run = torch.jit.load(config.policy_run)
-        self.policy_stop = torch.jit.load(config.policy_stop)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -250,17 +249,7 @@ class Controller:
         obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
         # obs_tensor = torch.from_numpy(self.obs[:113]).unsqueeze(0)
         self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-
-        # if controller.remote_controller.button[KeyMap.X] == 1:
-        #     print("cmd:", self.cmd)
-        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        # else:
-        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-        #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
-        
+        np.clip(self.action, -50.0, 50.0, out=self.action)
         # transform action to target_dof_pos
         target_dof_pos = self.action * self.config.action_scale #29
         # target_dof_pos = self.action * self.config.action_scale #29
