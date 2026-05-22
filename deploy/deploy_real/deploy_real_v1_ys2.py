@@ -33,7 +33,6 @@ class Controller:
         self.robot_data = []
         # Initialize the policy network
         self.policy_run = torch.jit.load(config.policy_run)
-        self.policy_stop = torch.jit.load(config.policy_stop)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -41,6 +40,8 @@ class Controller:
         self.target_dof_pos = config.default_angles.copy()
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
         self.cmd = np.array([0.0, 0, 0])
+        # self.f_cmd = np.array([0.0, 0, 0],dtype=np.float32)
+        self.joint_effort = np.zeros(config.num_actions, dtype=np.float32) # 추가: 관절 토크 데이터 저장용 배열
         self.counter = 0
         self.start_time = None
 
@@ -110,7 +111,6 @@ class Controller:
                 print(f"  joint_{j}: mean={mean_val:.6f}, std={std_val:.6f}, range=[{min_val:.6f}, {max_val:.6f}]")
         
         return filename
-    
     def LowStateHgHandler(self, msg: LowStateHG):
         self.low_state = msg
         self.mode_machine_ = self.low_state.mode_machine
@@ -204,9 +204,12 @@ class Controller:
         for i in range(len(self.config.leg_joint2motor_idx)):
             self.qj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].q
             self.dqj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].dq
+            self.joint_effort[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].tau_est
         for i in range(len(self.config.arm_waist_joint2motor_idx)):
-            self.qj[i+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].q
-            self.dqj[i+len(self.config.leg_joint2motor_idx)] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].dq
+            offset = i + len(self.config.leg_joint2motor_idx)
+            self.qj[offset] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].q
+            self.dqj[offset] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].dq
+            self.joint_effort[offset] = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[i]].tau_est
 
         # imu_state quaternion: w, x, y, z
         quat = self.low_state.imu_state.quaternion
@@ -226,6 +229,7 @@ class Controller:
         qj_obs = qj_obs * self.config.dof_pos_scale
         dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
+        joint_effort_obs = self.joint_effort * self.config.dof_effort_scale
         if self.remote_controller.ly >0:
             self.cmd[0] = self.remote_controller.ly*2
         else:
@@ -247,9 +251,14 @@ class Controller:
 
         # Get the action from the policy network
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-        obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-        # obs_tensor = torch.from_numpy(self.obs[:113]).unsqueeze(0)
-        self.action = self.policy_pickup_walk(obs_tensor).detach().numpy().squeeze()
+        # self.obs[9 + num_actions * 3:12 + num_actions * 3] = self.f_cmd * self.config.cmd_scale * self.config.max_cmd
+
+        # 추가: scaled joint torque (29)
+        self.obs[9 + num_actions * 3 : 9 + num_actions * 4] = joint_effort_obs
+
+        obs_tensor = torch.from_numpy(self.obs[:self.config.num_obs]).unsqueeze(0)
+        # obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
+        self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
 
         # if controller.remote_controller.button[KeyMap.X] == 1:
         #     print("cmd:", self.cmd)
