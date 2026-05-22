@@ -8,7 +8,7 @@ lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
 # policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy-0320.pt" # arm down sg
 # policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy-0926.pt" # arm down jh
-policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_force.pt" # force ys
+policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_0522_force.pt" # force ys
 
 leg_joint2motor_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 kps: [100, 100, 100, 150, 40, 40, 100, 100, 100, 150, 40, 40]
