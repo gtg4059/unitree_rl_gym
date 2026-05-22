@@ -225,17 +225,21 @@ class Controller:
         qj_obs = qj_obs * self.config.dof_pos_scale
         dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
-        # if self.remote_controller.ly >= 0.08:
-        #     self.cmd[0] = self.remote_controller.ly*1
-        # else:
-        #     self.cmd[0] = self.remote_controller.ly
-        # self.cmd[1] = 0 # rough
-        if self.remote_controller.ly >= 0.08:
+
+        if controller.remote_controller.button[KeyMap.X] == 1:
             self.cmd[0] = 0.7
+            self.cmd[3] = 1.0
+        else:
+            self.cmd[0] = self.remote_controller.ly
+            self.cmd[3] = 0.0
+
+        if self.remote_controller.ly >= 0.08:
+            self.cmd[0] = self.remote_controller.ly
         else:
             self.cmd[0] = 0.0
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
+
 
         for i in range(len(self.cmd)):
             if abs(self.cmd[i]) < 0.08:
