@@ -21,10 +21,6 @@ class Config:
             self.lowstate_topic = config["lowstate_topic"]
 
             self.policy_run = config["policy_run"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
-            self.policy_stop = config["policy_stop"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
-            self.policy_pickup = config["policy_pickup"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
-            self.policy_pickup_walk = config["policy_pickup_walk"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
-
             self.leg_joint2motor_idx = config["leg_joint2motor_idx"]
             self.kps = config["kps"]
             self.kds = config["kds"]

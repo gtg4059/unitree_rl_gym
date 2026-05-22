@@ -39,7 +39,7 @@ class Controller:
         self.action = np.zeros(config.num_actions, dtype=np.float32)
         self.target_dof_pos = config.default_angles.copy()
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
-        self.cmd = np.array([0.0, 0, 0])
+        self.cmd = np.array([0.0, 0.0, 0.0, 0.0])
         self.counter = 0
         self.start_time = None
 
@@ -226,6 +226,11 @@ class Controller:
         dqj_obs = dqj_obs * self.config.dof_vel_scale
         ang_vel = ang_vel * self.config.ang_vel_scale
 
+        if self.remote_controller.ly >= 0.08:
+            self.cmd[0] = self.remote_controller.ly
+        else:
+            self.cmd[0] = 0.0
+
         if controller.remote_controller.button[KeyMap.X] == 1:
             self.cmd[0] = 0.7
             self.cmd[3] = 1.0
@@ -233,10 +238,6 @@ class Controller:
             self.cmd[0] = self.remote_controller.ly
             self.cmd[3] = 0.0
 
-        if self.remote_controller.ly >= 0.08:
-            self.cmd[0] = self.remote_controller.ly
-        else:
-            self.cmd[0] = 0.0
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
 
@@ -277,7 +278,7 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        for i in range(len(self.config.arm_waist_joint2motor_idx-3)):
+        for i in range(len(self.config.arm_waist_joint2motor_idx)-3):
             motor_idx = self.config.arm_waist_joint2motor_idx[i+3]
             self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i+3]
             self.low_cmd.motor_cmd[motor_idx].qd = 0

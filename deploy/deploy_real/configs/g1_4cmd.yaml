@@ -48,4 +48,4 @@ cmd_scale: [2.0, 2.0, 0.25, 0.5]
 num_actions: 29
 num_obs: 97
 
-max_cmd: [1.0, 1.0, 1.2, 1.0]
+max_cmd: [1.0, 1.0, 1.5, 1.0]
