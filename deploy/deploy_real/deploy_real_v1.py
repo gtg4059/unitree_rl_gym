@@ -170,14 +170,6 @@ class Controller:
     def default_pos_state(self):
         print("Enter default pos state.")
         print("Waiting for the Button A signal...")
-        # left_hand_array = Array('d', 6, lock = True)          # [input]
-        # right_hand_array = Array('d', 6, lock = True)         # [input]
-        # left_hand_array[:] = np.array([0,0,0,0,0,0], dtype=np.float32)
-        # right_hand_array[:] = np.array([0,0,0,0,0,0], dtype=np.float32)
-        # dual_hand_data_lock = Lock()
-        # dual_hand_state_array = Array('d', 12, lock = False)   # [output] current left, right hand state(12) data.
-        # dual_hand_action_array = Array('d', 12, lock = False)  # [output] current left, right hand action(12) data.
-        # hand_ctrl = Inspire_Controller(left_hand_array, right_hand_array, dual_hand_data_lock, dual_hand_state_array, dual_hand_action_array)
         while self.remote_controller.button[KeyMap.A] != 1:
             for i in range(len(self.config.leg_joint2motor_idx)):
                 motor_idx = self.config.leg_joint2motor_idx[i]
@@ -229,7 +221,6 @@ class Controller:
             self.cmd[0] = self.remote_controller.ly*1
         else:
             self.cmd[0] = self.remote_controller.ly
-        # self.cmd[1] = 0 # rough
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
 
@@ -247,37 +238,21 @@ class Controller:
         # Get the action from the policy network
         self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
-        # obs_tensor = torch.from_numpy(self.obs[:113]).unsqueeze(0)
         self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-
-        # if controller.remote_controller.button[KeyMap.X] == 1:
-        #     print("cmd:", self.cmd)
-        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-        #     self.action = self.policy_run(obs_tensor).detach().numpy().squeeze()
-        # else:
-        #     self.obs[6 + num_actions * 3:9 + num_actions * 3] = self.cmd * 0
-        #     obs_tensor = torch.from_numpy(self.obs[:96]).unsqueeze(0)
-        #     self.action = self.policy_stop(obs_tensor).detach().numpy().squeeze()
         
         # transform action to target_dof_pos
         target_dof_pos = np.clip(self.action, -50, 50)  * self.config.action_scale #29
-        # target_dof_pos = self.action * self.config.action_scale #29
-        # print("target_dof_pos:",*target_dof_pos)
+
 
         # Build low cmd
-        # print("leg_joint2motor_idx")
         for i in range(len(self.config.leg_joint2motor_idx)):
-            # print(target_dof_pos[i],sep=',',end='')
             motor_idx = self.config.leg_joint2motor_idx[i]
             self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i],self.config.limits_low[i],self.config.limits_high[i])
             self.low_cmd.motor_cmd[motor_idx].qd = 0
             self.low_cmd.motor_cmd[motor_idx].kp = self.config.kps[i]
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
-        # print("arm_waist_joint2motor_idx")
         for i in range(3):
-            # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
             motor_idx = self.config.arm_waist_joint2motor_idx[i]
             self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
                                                           self.config.arm_waist_limits_high[i])
@@ -293,16 +268,6 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i+3]
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i+3]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
-
-        # for i in range(len(self.config.arm_waist_joint2motor_idx)):
-        #     # print(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],sep=',',end='')
-        #     motor_idx = self.config.arm_waist_joint2motor_idx[i]
-        #     self.low_cmd.motor_cmd[motor_idx].q = np.clip(target_dof_pos[i+len(self.config.leg_joint2motor_idx)],self.config.arm_waist_limits_low[i],
-        #                                                   self.config.arm_waist_limits_high[i])
-        #     self.low_cmd.motor_cmd[motor_idx].qd = 0
-        #     self.low_cmd.motor_cmd[motor_idx].kp = self.config.arm_waist_kps[i]
-        #     self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
-        #     self.low_cmd.motor_cmd[motor_idx].tau = 0
 
         # # 데이터 수집 (매 스텝마다)
         # data_row = {}
