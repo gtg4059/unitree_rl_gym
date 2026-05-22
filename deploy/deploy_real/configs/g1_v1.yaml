@@ -6,7 +6,7 @@ imu_type: "pelvis"    # "torso" or "pelvis"
 
 lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
-policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_noarm.pt" # arm down sg
+policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy.pt" # arm down sg
 # policy_run: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy-0926.pt" # arm down jh
 # policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop_0927.pt"
 policy_stop: "{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/policy/g1/exported/policies/policy_stop.pt" #

@@ -286,7 +286,7 @@ class Controller:
             self.low_cmd.motor_cmd[motor_idx].kd = self.config.arm_waist_kds[i]
             self.low_cmd.motor_cmd[motor_idx].tau = 0
 
-        for i in range(len(self.config.arm_waist_joint2motor_idx-3)):
+        for i in range(len(self.config.arm_waist_joint2motor_idx)-3):
             motor_idx = self.config.arm_waist_joint2motor_idx[i+3]
             self.low_cmd.motor_cmd[motor_idx].q = self.config.arm_default_angles[i+3]
             self.low_cmd.motor_cmd[motor_idx].qd = 0
