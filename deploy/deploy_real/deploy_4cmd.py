@@ -236,7 +236,7 @@ class Controller:
             self.cmd[3] = 1.0
         else:
             self.cmd[0] = self.remote_controller.ly
-            self.cmd[3] = 0.0
+            self.cmd[3] = 1.0
 
         self.cmd[1] = self.remote_controller.lx * -1
         self.cmd[2] = self.remote_controller.rx * -1
